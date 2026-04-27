@@ -108,8 +108,25 @@ jobs:
               --source-configuration "$SOURCE_CONFIG" \
               --region ${{ env.AWS_REGION }}
 
-            echo "Waiting for service update to complete..."
-            aws apprunner wait service-updated --service-arn $SERVICE_ARN --region ${{ env.AWS_REGION }}
+          echo "Waiting for App Runner deployment to complete..."
+                    while true; do
+                      STATUS=$(aws apprunner describe-service \
+                        --service-arn $SERVICE_ARN \
+                        --region ${{ env.AWS_REGION }} \
+                        --query "Service.Status" \
+                        --output text)
+                        
+                      if [ "$STATUS" == "RUNNING" ]; then
+                        echo "Deployment successful! Service is RUNNING."
+                        break
+                      elif [[ "$STATUS" == *"FAILED"* ]]; then
+                        echo "Deployment failed! Service status is $STATUS."
+                        exit 1
+                      else
+                        echo "Current status: $STATUS. Waiting 15 seconds..."
+                        sleep 15
+                      fi
+                    done
           fi
 
       - name: Get AppRunner service URL

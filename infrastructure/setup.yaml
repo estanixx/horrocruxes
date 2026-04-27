@@ -60,6 +60,14 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess
         - arn:aws:iam::aws:policy/AWSAppRunnerFullAccess
+      Policies:
+        - PolicyName: PassRoleForAppRunner
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/horrocruxes-apprunner-*"
       Tags:
         - Key: "Project"
           Value: "horrocruxes"
