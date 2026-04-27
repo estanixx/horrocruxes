@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Creates OIDC Provider, IAM Role for GitHub Actions, and ECR Repository
+  for Horrocruxes Backend deployment to AWS AppRunner.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or username
+    Default: ""
+
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository name
+    Default: "horrocruxes"
+
+  GitHubBranch:
+    Type: String
+    Description: GitHub branch to allow (e.g., main, prod)
+    Default: "prod"
+
+  EcrRepositoryName:
+    Type: String
+    Description: Name of the ECR repository for backend
+    Default: "horrocruxes-backend"
+
+  Environment:
+    Type: String
+    Description: Environment name for resource tagging
+    Default: "production"
+
+Conditions:
+  CreateOIDCProvider:
+    !Not
+      - !Equals
+        - !Ref GitHubOrg
+        - ""
+
+Resources:
+  # ============================================
+  # IAM Role for GitHub Actions
+  # ============================================
+  GitHubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "horrocruxes-github-actions-${Environment}"
+      Description: Role for GitHub Actions to deploy to AWS AppRunner
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}"
+              StringEquals:
+                token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess
+        - arn:aws:iam::aws:policy/AWSAppRunnerFullAccess
+      Tags:
+        - Key: "Project"
+          Value: "horrocruxes"
+        - Key: "Environment"
+          Value: !Ref Environment
+
+  # ============================================
+  # ECR Repository for Backend
+  # ============================================
+  BackendECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref EcrRepositoryName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: "MUTABLE"
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only last 10 images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["v"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Expire untagged images older than 14 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: "Project"
+          Value: "horrocruxes"
+        - Key: "Environment"
+          Value: !Ref Environment
+
+
+
+Outputs:
+
+  GitHubActionsRoleArn:
+    Description: "ARN of the GitHub Actions IAM Role"
+    Value: !GetAtt GitHubActionsRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-GitHubActionsRoleArn"
+
+  ECRRepositoryUri:
+    Description: "URI of the ECR Repository"
+    Value: !GetAtt BackendECRRepository.RepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRRepositoryUri"
+
+  ECRRepositoryName:
+    Description: "Name of the ECR Repository"
+    Value: !Ref BackendECRRepository
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRRepositoryName"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "GitHub Configuration"
+        Parameters:
+          - GitHubOrg
+          - GitHubRepo
+          - GitHubBranch
+      - Label:
+          default: "AWS Resources"
+        Parameters:
+          - EcrRepositoryName
+          - Environment
+
+    ParameterLabels:
+      GitHubOrg:
+        default: "GitHub Organization"
+      GitHubRepo:
+        default: "GitHub Repository"
+      GitHubBranch:
+        default: "GitHub Branch"
+      EcrRepositoryName:
+        default: "ECR Repository Name"
+      Environment:
+        default: "Environment"
