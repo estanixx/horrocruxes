@@ -114,6 +114,29 @@ Resources:
         - Key: "Environment"
           Value: !Ref Environment
 
+  # ============================================
+  # AppRunner Service Role for ECR Access
+  # ============================================
+  AppRunnerECRAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "horrocruxes-apprunner-ecr-access-${Environment}"
+      Description: Role for AppRunner to pull images from ECR
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apprunner.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+        - Key: "Project"
+          Value: "horrocruxes"
+        - Key: "Environment"
+          Value: !Ref Environment
+
 
 
 Outputs:
@@ -135,6 +158,12 @@ Outputs:
     Value: !Ref BackendECRRepository
     Export:
       Name: !Sub "${AWS::StackName}-ECRRepositoryName"
+
+  AppRunnerECRAccessRoleArn:
+    Description: "ARN of the AppRunner ECR Access Role"
+    Value: !GetAtt AppRunnerECRAccessRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-AppRunnerECRAccessRoleArn"
 
 Metadata:
   AWS::CloudFormation::Interface:

@@ -76,4 +76,5 @@ Push to the `prod` branch triggers:
 
 | Secret | Description |
 |--------|-------------|
-| `AWS_ROLE_ARN` | IAM role ARN with ECR and AppRunner permissions (created by CloudFormation stack output) |
+| `AWS_ROLE_ARN` | GitHub Actions role ARN (from CloudFormation output `GitHubActionsRoleArn`) |
+| `ECR_ACCESS_ROLE_ARN` | AppRunner ECR access role ARN (from CloudFormation output `AppRunnerECRAccessRoleArn`) |
