@@ -67,7 +67,7 @@ jobs:
 
           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
-
+          
       - name: Deploy to AppRunner
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -76,7 +76,7 @@ jobs:
           # 1. Corrected App Runner Source Configuration Schema
           SOURCE_CONFIG="AuthenticationConfiguration={AccessRoleArn=${{ secrets.ECR_ACCESS_ROLE_ARN }}},ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR}"
 
-          # 2. Check if service exists by filtering the list (returns ARN if exists, empty if not)
+          # 2. Check if service exists
           SERVICE_ARN=$(aws apprunner list-services \
             --region ${{ env.AWS_REGION }} \
             --query "ServiceSummaryList[?ServiceName=='${{ env.APP_RUNNER_SERVICE_NAME }}'].ServiceArn" \
@@ -85,7 +85,6 @@ jobs:
           if [ -z "$SERVICE_ARN" ]; then
             echo "Service not found. Creating new AppRunner service..."
             
-            # create-service returns the full JSON. We extract the new ARN immediately.
             SERVICE_ARN=$(aws apprunner create-service \
               --service-name ${{ env.APP_RUNNER_SERVICE_NAME }} \
               --source-configuration "$SOURCE_CONFIG" \
@@ -94,46 +93,49 @@ jobs:
               --tags "Key=Project,Value=horrocruxes" "Key=Environment,Value=production" \
               --query "Service.ServiceArn" \
               --output text)
-
-            echo "Waiting for service to become active..."
-            # Now we can safely use the ARN for the waiter
-            aws apprunner wait service-active --service-arn $SERVICE_ARN --region ${{ env.AWS_REGION }}
             
+            echo "Service creation initiated with ARN: $SERVICE_ARN"
           else
             echo "Service found (ARN: $SERVICE_ARN). Updating existing AppRunner service..."
             
-            # update-service REQUIRES the ARN, not the name
             aws apprunner update-service \
               --service-arn $SERVICE_ARN \
               --source-configuration "$SOURCE_CONFIG" \
-              --region ${{ env.AWS_REGION }}
-
-          echo "Waiting for App Runner deployment to complete..."
-                    while true; do
-                      STATUS=$(aws apprunner describe-service \
-                        --service-arn $SERVICE_ARN \
-                        --region ${{ env.AWS_REGION }} \
-                        --query "Service.Status" \
-                        --output text)
-                        
-                      if [ "$STATUS" == "RUNNING" ]; then
-                        echo "Deployment successful! Service is RUNNING."
-                        break
-                      elif [[ "$STATUS" == *"FAILED"* ]]; then
-                        echo "Deployment failed! Service status is $STATUS."
-                        exit 1
-                      else
-                        echo "Current status: $STATUS. Waiting 15 seconds..."
-                        sleep 15
-                      fi
-                    done
+              --region ${{ env.AWS_REGION }} > /dev/null
+              
+            echo "Service update initiated."
           fi
+
+          # Export the ARN to GitHub Env so the next step can use it
+          echo "SERVICE_ARN=$SERVICE_ARN" >> $GITHUB_ENV
+
+          # 3. Custom Waiter (Moved OUTSIDE the if/else block)
+          echo "Waiting for App Runner deployment to complete..."
+          while true; do
+            STATUS=$(aws apprunner describe-service \
+              --service-arn $SERVICE_ARN \
+              --region ${{ env.AWS_REGION }} \
+              --query "Service.Status" \
+              --output text)
+              
+            if [ "$STATUS" == "RUNNING" ]; then
+              echo "Deployment successful! Service is RUNNING."
+              break
+            elif [[ "$STATUS" == *"FAILED"* ]]; then
+              echo "Deployment failed! Service status is $STATUS."
+              exit 1
+            else
+              echo "Current status: $STATUS. Waiting 15 seconds..."
+              sleep 15
+            fi
+          done
 
       - name: Get AppRunner service URL
         id: service-url
         run: |
+          # Using the SERVICE_ARN from the previous step
           SERVICE_DESC=$(aws apprunner describe-service \
-            --service-name ${{ env.APP_RUNNER_SERVICE_NAME }} \
+            --service-arn ${{ env.SERVICE_ARN }} \
             --region ${{ env.AWS_REGION }} \
             --query 'Service.ServiceUrl' \
             --output text)
@@ -147,7 +149,8 @@ jobs:
           echo "Waiting for application to be ready..."
           sleep 30
           
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ env.SERVICE_URL }}/health || echo "000")
+          # Changed to HTTPS
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.SERVICE_URL }}/health || echo "000")
           echo "Health check response: $response"
           
           if [ "$response" = "200" ]; then

@@ -7,17 +7,13 @@ Parameters:
   GitHubOrg:
     Type: String
     Description: GitHub organization or username
-    Default: ""
+    Default: "estanixx"
 
   GitHubRepo:
     Type: String
     Description: GitHub repository name
     Default: "horrocruxes"
 
-  GitHubBranch:
-    Type: String
-    Description: GitHub branch to allow (e.g., main, prod)
-    Default: "prod"
 
   EcrRepositoryName:
     Type: String
@@ -28,15 +24,15 @@ Parameters:
     Type: String
     Description: Environment name for resource tagging
     Default: "production"
-
-Conditions:
-  CreateOIDCProvider:
-    !Not
-      - !Equals
-        - !Ref GitHubOrg
-        - ""
+    
+  GitHubOIDCProviderArn:
+    Type: String
+    Description: ARN of the GitHub OIDC Provider (created in a separate stack)
+    Default: "arn:aws:iam::871696174477:oidc-provider/token.actions.githubusercontent.com"
 
 Resources:
+
+
   # ============================================
   # IAM Role for GitHub Actions
   # ============================================
@@ -50,11 +46,11 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+              Federated: !Ref GitHubOIDCProviderArn
             Action: "sts:AssumeRoleWithWebIdentity"
             Condition:
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:*"
               StringEquals:
                 token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
       ManagedPolicyArns:
@@ -135,7 +131,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: apprunner.amazonaws.com
+              Service: build.apprunner.amazonaws.com
             Action: "sts:AssumeRole"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
