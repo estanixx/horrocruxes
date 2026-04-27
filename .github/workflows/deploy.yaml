@@ -73,14 +73,17 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
         run: |
+          # Build source configuration JSON
+          SOURCE_CONFIG="ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR,ECRConfiguration={AccessRoleArn=${{ secrets.ECR_ACCESS_ROLE_ARN }}}"
+
           # Check if AppRunner service exists
           SERVICE_STATUS=$(aws apprunner describe-service --service-name ${{ env.APP_RUNNER_SERVICE_NAME }} --region ${{ env.AWS_REGION }} 2>&1 || echo "NOT_FOUND")
-          
+
           if echo "$SERVICE_STATUS" | grep -q "NOT_FOUND"; then
             echo "Creating new AppRunner service..."
             aws apprunner create-service \
               --service-name ${{ env.APP_RUNNER_SERVICE_NAME }} \
-              --source-configuration "ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR,ECRConfiguration={AccessRoleArn=${{ secrets.ECR_ACCESS_ROLE_ARN }}}" \
+              --source-configuration "$SOURCE_CONFIG" \
               --instance-configuration "Cpu=1 vCPU,Memory=2 GB" \
               --region ${{ env.AWS_REGION }} \
               --tags "Key=Project,Value=horrocruxes" "Key=Environment,Value=production"
@@ -91,7 +94,7 @@ jobs:
             echo "Updating existing AppRunner service..."
             aws apprunner update-service \
               --service-name ${{ env.APP_RUNNER_SERVICE_NAME }} \
-              --source-configuration "ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR,ECRConfiguration={AccessRoleArn=${{ secrets.ECR_ACCESS_ROLE_ARN }}}" \
+              --source-configuration "$SOURCE_CONFIG" \
               --region ${{ env.AWS_REGION }}
 
             echo "Waiting for service to become active..."
