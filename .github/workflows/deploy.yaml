@@ -88,8 +88,8 @@ jobs:
             SERVICE_ARN=$(aws apprunner create-service \
               --service-name ${{ env.APP_RUNNER_SERVICE_NAME }} \
               --source-configuration "$SOURCE_CONFIG" \
-              --instance-configuration "Cpu=1 vCPU,Memory=2 GB" \
-              --health-check-configuration "Protocol=HTTP,Path=/health,Port=8000" \
+              --instance-configuration "Cpu=1 vCPU,Memory=2 GB,Port=8000" \
+              --health-check-configuration "Protocol=HTTP,Path=/health" \
               --region ${{ env.AWS_REGION }} \
               --tags "Key=Project,Value=horrocruxes" "Key=Environment,Value=production" \
               --query "Service.ServiceArn" \
@@ -102,7 +102,7 @@ jobs:
             aws apprunner update-service \
               --service-arn $SERVICE_ARN \
               --source-configuration "$SOURCE_CONFIG" \
-              --health-check-configuration "Protocol=HTTP,Path=/health,Port=8000" \
+              --health-check-configuration "Protocol=HTTP,Path=/health" \
               --region ${{ env.AWS_REGION }} > /dev/null
               
             echo "Service update initiated."
