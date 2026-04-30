@@ -1,34 +1,100 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Header from "./components/Header";
 import QuestionBox from "./components/QuestionBox";
 import AnswerBox from "./components/AnswerBox";
 import SourcesList from "./components/SourcesList";
 
+function normalizeApiUrl(url) {
+  if (!url) return "http://localhost:8000";
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
 function App() {
+  const API_URL = useMemo(
+    () => normalizeApiUrl(import.meta.env.VITE_API_URL),
+    []
+  );
+
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleAsk = async () => {
-    if (!question.trim()) return;
+    const trimmedQuestion = question.trim();
+
+    if (!trimmedQuestion || loading) return;
 
     setLoading(true);
+    setError("");
     setAnswer("");
     setSources([]);
 
-    setTimeout(() => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(`${API_URL}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: trimmedQuestion,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        let message = `Error HTTP ${response.status}`;
+
+        try {
+          const errorData = await response.json();
+          if (errorData?.detail) {
+            message = errorData.detail;
+          }
+        } catch {
+          // Si la respuesta no es JSON, dejamos el mensaje por defecto
+        }
+
+        throw new Error(message);
+      }
+
+      const data = await response.json();
+
       setAnswer(
-        `Respuesta simulada para la pregunta: "${question}". Aquí el backend luego devolverá la respuesta real basada en los libros y las fuentes estructuradas.`
+        data?.answer?.trim()
+          ? data.answer
+          : "El backend respondió, pero no devolvió una respuesta con contenido."
       );
 
-      setSources([
-        "Harry Potter and the Chamber of Secrets - Chapter 17",
-        "Harry Potter and the Half-Blood Prince - Chapter 23",
-      ]);
+      setSources(Array.isArray(data?.citations) ? data.citations : []);
+    } catch (err) {
+      if (err.name === "AbortError") {
+        setError("La solicitud tardó demasiado. Intenta de nuevo.");
+      } else {
+        setError(
+          "No fue posible conectar con el backend. Verifica que esté encendido y que VITE_API_URL sea correcta."
+        );
+      }
 
+      setAnswer("");
+      setSources([]);
+      console.error("Error conectando con backend:", err);
+    } finally {
       setLoading(false);
-    }, 1200);
+    }
+  };
+
+  const handleClear = () => {
+    setQuestion("");
+    setAnswer("");
+    setSources([]);
+    setError("");
+    setLoading(false);
   };
 
   return (
@@ -40,11 +106,13 @@ function App() {
           question={question}
           setQuestion={setQuestion}
           handleAsk={handleAsk}
+          handleClear={handleClear}
           loading={loading}
         />
 
-        <AnswerBox answer={answer} loading={loading} />
+        {error ? <div className="error-banner">{error}</div> : null}
 
+        <AnswerBox answer={answer} loading={loading} />
         <SourcesList sources={sources} />
       </div>
     </div>

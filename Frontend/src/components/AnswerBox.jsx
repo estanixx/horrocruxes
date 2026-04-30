@@ -4,12 +4,18 @@ function AnswerBox({ answer, loading }) {
       <h2>Respuesta</h2>
 
       {loading ? (
-        <p className="loading-text">Buscando información...</p>
+        <p className="loading-text">Consultando el backend y verificando fuentes...</p>
       ) : answer ? (
-        <p className="answer-text">{answer}</p>
+        <div className="answer-text">
+          {answer.split("\n").map((line, index) => (
+            <p key={index} className="answer-paragraph">
+              {line || "\u00A0"}
+            </p>
+          ))}
+        </div>
       ) : (
         <p className="empty-text">
-          Aquí aparecerá la respuesta del sistema.
+          Aquí aparecerá la respuesta real del sistema.
         </p>
       )}
     </div>
