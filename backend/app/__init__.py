@@ -1,0 +1,1 @@
+"""Horrocruxes backend application package."""
