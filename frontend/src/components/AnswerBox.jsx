@@ -1,17 +1,17 @@
+import ReactMarkdown from "react-markdown";
+
 function AnswerBox({ answer, loading }) {
   return (
     <div className="section-card">
       <h2>Respuesta</h2>
 
       {loading ? (
-        <p className="loading-text">Consultando el backend y verificando fuentes...</p>
+        <p className="loading-text">
+          Consultando el backend y verificando fuentes...
+        </p>
       ) : answer ? (
-        <div className="answer-text">
-          {answer.split("\n").map((line, index) => (
-            <p key={index} className="answer-paragraph">
-              {line || "\u00A0"}
-            </p>
-          ))}
+        <div className="answer-text markdown-content">
+          <ReactMarkdown>{answer}</ReactMarkdown>
         </div>
       ) : (
         <p className="empty-text">

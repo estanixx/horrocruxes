@@ -191,6 +191,53 @@ input {
   margin-bottom: 0;
 }
 
+.markdown-content {
+  color: #f3ead2;
+  line-height: 1.8;
+  font-size: 1rem;
+}
+
+.markdown-content p {
+  margin-bottom: 12px;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content strong {
+  color: #f8e7b9;
+  font-weight: 700;
+}
+
+.markdown-content em {
+  font-style: italic;
+  color: #f0d88d;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 12px 0 12px 24px;
+}
+
+.markdown-content li {
+  margin-bottom: 8px;
+}
+
+.markdown-content code {
+  background: rgba(212, 175, 55, 0.12);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid rgba(212, 175, 55, 0.35);
+  padding-left: 12px;
+  margin: 12px 0;
+  color: #d7c6a0;
+}
+
 .loading-text {
   color: #f0d88d;
   font-weight: bold;
