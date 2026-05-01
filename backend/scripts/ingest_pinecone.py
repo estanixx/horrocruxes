@@ -8,6 +8,7 @@ import boto3
 from dotenv import load_dotenv
 from google.api_core.exceptions import ResourceExhausted
 from langchain_community.document_loaders import CSVLoader, PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings as SentenceTransformerEmbeddings
 import torch
 from langchain_core.documents import Document
@@ -71,6 +72,16 @@ def _filter_documents(documents: Iterable[Document]) -> list[Document]:
         doc.page_content = content
         filtered.append(doc)
     return filtered
+
+
+def _split_documents(documents: list[Document]) -> list[Document]:
+    chunk_size = int(os.getenv("CHUNK_SIZE", "1200"))
+    chunk_overlap = int(os.getenv("CHUNK_OVERLAP", "200"))
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    return splitter.split_documents(documents)
 
 
 def main() -> None:
@@ -141,6 +152,8 @@ def main() -> None:
     documents = _filter_documents(_load_pdf_documents() + _load_csv_documents())
     if not documents:
         raise RuntimeError("No documents found in S3 prefixes")
+
+    documents = _split_documents(documents)
 
     print(f"Embedding provider: {embedding_provider}")
     print(f"Embedding model: {resolved_model}")

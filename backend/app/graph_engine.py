@@ -114,6 +114,17 @@ def _format_citations(documents: List[Document]) -> List[Citation]:
     return citations
 
 
+def _split_queries(query: str) -> List[str]:
+    separators = [" and ", "?", "."]
+    parts = [query]
+    for sep in separators:
+        next_parts = []
+        for part in parts:
+            next_parts.extend([p.strip() for p in part.split(sep) if p.strip()])
+        parts = next_parts
+    return list(dict.fromkeys(parts))
+
+
 async def _route_query(state: GraphState) -> GraphState:
     query_lower = state.query.lower()
     if any(keyword in query_lower for keyword in ("csv", "table", "dataset", "structured")):
@@ -144,12 +155,16 @@ async def _search_agent(state: GraphState) -> GraphState:
         pc = Pinecone(api_key=config.pinecone_api_key)
         index = pc.Index(config.pinecone_index)
         vector_store = PineconeVectorStore(index=index, embedding=embeddings)
-        docs = await asyncio.wait_for(
-            asyncio.to_thread(vector_store.similarity_search, state.query, 12),
-            timeout=15,
-        )
-        state.documents = docs
-        state.citations = _format_citations(docs)
+        query_list = _split_queries(state.query)
+        combined_docs: List[Document] = []
+        for q in query_list:
+            docs = await asyncio.wait_for(
+                asyncio.to_thread(vector_store.similarity_search, q, 12),
+                timeout=15,
+            )
+            combined_docs.extend(docs)
+        state.documents = combined_docs
+        state.citations = _format_citations(combined_docs)
     except asyncio.TimeoutError:
         state.errors.append("Pinecone search timed out")
     except Exception as exc:
