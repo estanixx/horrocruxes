@@ -29,7 +29,7 @@ function QuestionBox({
           disabled={loading || !question.trim()}
           className="send-button"
         >
-          {loading ? "Consultando..." : "Enviar"}
+          {loading ? "Consulting..." : "Send"}
         </button>
 
         <button
@@ -38,7 +38,7 @@ function QuestionBox({
           className="clear-button"
           type="button"
         >
-          Limpiar
+          Clear
         </button>
       </div>
 

@@ -1,12 +1,22 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Header from "./components/Header";
 import QuestionBox from "./components/QuestionBox";
 import AnswerBox from "./components/AnswerBox";
 import SourcesList from "./components/SourcesList";
+import HistoryPanel from "./components/HistoryPanel";
 
 function normalizeApiUrl(url) {
   if (!url) return "http://localhost:8000";
   return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
+function getOrCreateSessionId() {
+  let sessionId = localStorage.getItem("horrocruxes-session-id");
+  if (!sessionId) {
+    sessionId = "session-" + Date.now() + "-" + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem("horrocruxes-session-id", sessionId);
+  }
+  return sessionId;
 }
 
 function App() {
@@ -15,11 +25,46 @@ function App() {
     []
   );
 
+  const [sessionId] = useState(() => getOrCreateSessionId());
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [conversationHistory, setConversationHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Load conversation history on mount
+  useEffect(() => {
+    loadConversationHistory();
+  }, [sessionId]);
+
+  const loadConversationHistory = async () => {
+    try {
+      const response = await fetch(`${API_URL}/session/${sessionId}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Parse context into conversation pairs
+        if (data.context) {
+          const lines = data.context.split("\n");
+          const pairs = [];
+          let currentPair = null;
+          for (const line of lines) {
+            if (line.startsWith("User: ")) {
+              currentPair = { question: line.substring(6), answer: null };
+            } else if (line.startsWith("Assistant: ") && currentPair) {
+              currentPair.answer = line.substring(11);
+              pairs.push(currentPair);
+              currentPair = null;
+            }
+          }
+          setConversationHistory(pairs);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load conversation history:", err);
+    }
+  };
 
   const handleAsk = async () => {
     const trimmedQuestion = question.trim();
@@ -39,6 +84,7 @@ function App() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Session-ID": sessionId,
         },
         body: JSON.stringify({
           query: trimmedQuestion,
@@ -64,12 +110,16 @@ function App() {
       }
 
       const data = await response.json();
+      console.log("Response data:", data);
 
-      setAnswer(
-        data?.answer?.trim()
-          ? data.answer
-          : "El backend respondió, pero no devolvió una respuesta con contenido."
-      );
+      const answerText = data?.answer?.trim()
+        ? data.answer
+        : "El backend respondió, pero no devolvió una respuesta con contenido.";
+
+      setAnswer(answerText);
+
+      // Add to local conversation history
+      setConversationHistory(prev => [...prev, { question: trimmedQuestion, answer: answerText }]);
 
       setSources(Array.isArray(data?.citations) ? data.citations : []);
     } catch (err) {
@@ -77,7 +127,7 @@ function App() {
         setError("La solicitud tardó demasiado. Intenta de nuevo.");
       } else {
         setError(
-          "No fue posible conectar con el backend. Verifica que esté encendido y que VITE_API_URL sea correcta."
+          "No fue posible conectar con el backend. Verifica que esté encendido y que VITE_API_URL sea correcta. Error: " + err.message
         );
       }
 
@@ -89,18 +139,50 @@ function App() {
     }
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
     setQuestion("");
     setAnswer("");
     setSources([]);
     setError("");
     setLoading(false);
+    setConversationHistory([]);
+
+    // Clear session on backend
+    try {
+      await fetch(`${API_URL}/session/${sessionId}`, { method: "DELETE" });
+    } catch (err) {
+      console.error("Failed to clear session:", err);
+    }
+  };
+
+  const handleHistoryClick = (item) => {
+    setQuestion(item.question);
+    setAnswer(item.answer || "");
+    setShowHistory(false);
   };
 
   return (
     <div className="app-container">
       <div className="main-card">
         <Header />
+
+        <div className="session-indicator">
+          <span className="session-id">Session: {sessionId.substring(0, 20)}...</span>
+          <button 
+            className="history-toggle-btn"
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            {showHistory ? "Hide History" : "Show History"}
+          </button>
+        </div>
+
+        {showHistory && (
+          <HistoryPanel 
+            history={conversationHistory}
+            onItemClick={handleHistoryClick}
+            onClear={() => handleClear()}
+          />
+        )}
 
         <QuestionBox
           question={question}
