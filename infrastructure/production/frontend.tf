@@ -23,26 +23,26 @@ resource "aws_amplify_app" "frontend" {
     VITE_API_URL        = data.aws_ssm_parameter.vite_api_url.value
   }
   
-  # Build spec for monorepo (frontend only)
+  # Build spec for frontend (in frontend/ subfolder)
   build_spec = <<-EOT
 version: 1
 applications:
-  - frontend:
+  - appRoot: frontend
+    frontend:
       phases:
         preBuild:
           commands:
-            - npm ci
+            - cd frontend && npm ci
         build:
           commands:
-            - npm run build
+            - cd frontend && npm run build
       artifacts:
-        baseDirectory: dist
+        baseDirectory: frontend/dist
         files:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
-    appRoot: frontend
+          - frontend/node_modules/**/*
 EOT
 
   # Custom rewrite rules for SPA

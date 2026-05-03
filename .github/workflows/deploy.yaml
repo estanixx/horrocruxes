@@ -380,11 +380,12 @@ jobs:
             set +x
             echo "Raw result: $JOB_RESULT"
             
-            # Parse job ID from JSON response
-            JOB_ID=$(echo "$JOB_RESULT" | jq -r '.jobId // empty')
+            # Parse job ID from JSON response - check for jobSummary.jobId
+            JOB_ID=$(echo "$JOB_RESULT" | jq -r '.jobSummary.jobId // empty')
+            JOB_STATUS=$(echo "$JOB_RESULT" | jq -r '.jobSummary.status // empty')
             
-            if [ -n "$JOB_ID" ] && echo "$JOB_ID" | grep -q "^j-"; then
-              echo "✅ Started build job: $JOB_ID"
+            if [ -n "$JOB_ID" ]; then
+              echo "✅ Started build job: $JOB_ID (status: $JOB_STATUS)"
             else
               echo "❌ Failed to start job"
               echo "Full response: $JOB_RESULT"
