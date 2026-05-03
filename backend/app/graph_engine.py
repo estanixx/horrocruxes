@@ -108,13 +108,70 @@ def _build_embeddings(config: EnvConfig) -> Tuple[Optional[Embeddings], Optional
 
 
 def _format_citations(documents: List[Document]) -> List[Citation]:
+    import os
+
     citations: List[Citation] = []
+
     for doc in documents:
         metadata = doc.metadata or {}
-        source = metadata.get("source", "unknown")
+
+        source = (
+            metadata.get("book")
+            or metadata.get("title")
+            or metadata.get("file_name")
+            or metadata.get("source")
+            or "unknown"
+        )
+
+        page = metadata.get("page") or metadata.get("page_number")
+        chapter = metadata.get("chapter") or metadata.get("chapter_title")
+
+        # 🔹 limpiar nombre archivo
+        file_name = os.path.basename(str(source))
+
+        file_name = file_name.replace(".pdf", "")
+        file_name = file_name.replace("hp1", "Philosopher's Stone")
+        file_name = file_name.replace("hp2", "Chamber of Secrets")
+        file_name = file_name.replace("hp3", "Prisoner of Azkaban")
+        file_name = file_name.replace("hp4", "Goblet of Fire")
+        file_name = file_name.replace("hp5", "Order of the Phoenix")
+        file_name = file_name.replace("hp6", "Half-Blood Prince")
+        file_name = file_name.replace("hp7", "Deathly Hallows")
+
+        clean_source = file_name
+
+        # 🔹 detalles (page + chapter)
+        details = []
+
+        if chapter:
+            details.append(f"Chapter: {chapter}")
+
+        if page is not None:
+            try:
+                page = int(float(page))
+            except:
+                pass
+            details.append(f"Page {page}")
+
+        if details:
+            clean_source = f"{clean_source} ({', '.join(details)})"
+
+        # 🔹 snippet limpio
         snippet = (doc.page_content or "").strip()
+        snippet = snippet.replace("\n", " ")
+        snippet = " ".join(snippet.split())
+
+        if len(snippet) > 300:
+            snippet = snippet[:300] + "..."
+
         if snippet:
-            citations.append(Citation(source=source, snippet=snippet[:300]))
+            citations.append(
+                Citation(
+                    source=clean_source,
+                    snippet=snippet,
+                )
+            )
+
     return citations
 
 
@@ -303,12 +360,20 @@ async def _route_query(state: GraphState) -> GraphState:
 
 
 def _is_pdf_source(doc: Document) -> bool:
-    """Check if document is from a PDF source (not CSV/xlsx/docx)."""
     metadata = doc.metadata or {}
-    source = metadata.get("source", "")
-    # Exclude common non-PDF extensions
-    return not any(source.lower().endswith(ext) for ext in (".csv", ".xlsx", ".xls", ".docx", ".doc", ".txt"))
+    source = str(metadata.get("source", "")).lower()
+    file_name = str(metadata.get("file_name", "")).lower()
+    title = str(metadata.get("title", "")).lower()
 
+    combined = f"{source} {file_name} {title}"
+
+    if ".pdf" in combined:
+        return True
+
+    if ".csv" in combined or ".xlsx" in combined or ".txt" in combined:
+        return False
+
+    return True
 
 async def _search_agent(state: GraphState) -> GraphState:
     try:
@@ -334,7 +399,7 @@ async def _search_agent(state: GraphState) -> GraphState:
         query_list = _split_queries(state.query)
         combined_docs: List[Document] = []
         # Increased k from 12 to 25 for better coverage on complex questions
-        k_per_query = 25
+        k_per_query = 40
         for q in query_list:
             docs = await asyncio.wait_for(
                 asyncio.to_thread(vector_store.similarity_search, q, k_per_query),
@@ -481,21 +546,29 @@ async def _verification_agent(state: GraphState) -> GraphState:
         state.answer = "Severus Snape."
         return state
 
-    prompt = """You are a helpful Harry Potter expert assistant.
+    prompt = """You are HORROCRUXES, a Harry Potter research assistant.
 
-TASK: Answer the user's question based on the provided context. If the context contains relevant information, use it and cite sources. If the context is insufficient but you know the answer from Harry Potter canon, you MAY answer using your knowledge (this is not a violation).
+Your task is to answer using the provided retrieved context.
 
-IMPORTANT: The user is asking about Harry Potter, a globally known book series. Common knowledge answers like "Gryffindor" for Harry's house are acceptable when context is weak.
+Rules:
+1. Answer in the same language as the user's question.
+2. Use Markdown formatting.
+3. Use **bold** for important names, books, places, spells, and conclusions.
+4. If the question requires comparison, timeline, relationships, or cross-book analysis, synthesize across all relevant context.
+5. Do not say "Insufficient evidence" if the context contains useful partial evidence. Instead, answer what can be supported and mention what is uncertain.
+6. Always include a short "Sources used" section at the end.
+7. Do not invent page numbers or chapters. Only mention them if present in metadata/context.
 
-Question: {query}
+Question:
+{query}
 
-Context from documents:
+Retrieved context:
 {docs}
 
 Structured data:
 {structured}
 
-Provide a direct answer. If using context, briefly cite it. If relying on HP knowledge, you may note "Based on Harry Potter canon" but this is not required.
+Write a clear, well-structured answer.
 """
     try:
         snippets = [
