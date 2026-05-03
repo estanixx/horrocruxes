@@ -241,62 +241,25 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Check Amplify app, jobs, and branch status
+      - name: Check Amplify app status
         id: amplify-status
         run: |
           APP_ID=$(aws amplify list-apps \
             --query "apps[?name=='horrocruxes-production'].appId" \
-            --output text)
+            --output text 2>/dev/null || echo "")
+          
+          echo "APP_ID=$APP_ID"
           
           if [ -n "$APP_ID" ]; then
             echo "app_exists=true" >> $GITHUB_OUTPUT
             echo "APP_ID=$APP_ID" >> $GITHUB_ENV
-            
-            # Check if there's an active job running
-            ACTIVE_JOB=$(aws amplify list-jobs \
-              --app-id $APP_ID \
-              --branch-name prod \
-              --max-items 1 \
-              --query "jobSummaries[0].[status]" \
-              --output text 2>/dev/null || echo "NONE")
-            
-            if [ "$ACTIVE_JOB" = "RUNNING" ] || [ "$ACTIVE_JOB" = "PENDING" ]; then
-              echo "deployment_running=true" >> $GITHUB_OUTPUT
-              echo "⚠️ Amplify deployment already running: $ACTIVE_JOB"
-            else
-              echo "deployment_running=false" >> $GITHUB_OUTPUT
-            fi
-            
-            # Check if branch has been updated (created == updated means no deploy yet)
-            BRANCH_INFO=$(aws amplify get-branch \
-              --app-id $APP_ID \
-              --branch-name prod \
-              --query 'branch.createTime' \
-              --output text 2>/dev/null || echo "")
-            
-            BRANCH_UPDATE=$(aws amplify get-branch \
-              --app-id $APP_ID \
-              --branch-name prod \
-              --query 'branch.updateTime' \
-              --output text 2>/dev/null || echo "")
-            
-            echo "Branch created: $BRANCH_INFO"
-            echo "Branch updated: $BRANCH_UPDATE"
-            
-            if [ "$BRANCH_INFO" = "$BRANCH_UPDATE" ] && [ -n "$BRANCH_INFO" ]; then
-              echo "branch_never_deployed=true" >> $GITHUB_OUTPUT
-              echo "⚠️ Branch has never been deployed (created == updated)"
-            else
-              echo "branch_never_deployed=false" >> $GITHUB_OUTPUT
-            fi
+            echo "✅ Amplify app found: $APP_ID"
           else
             echo "app_exists=false" >> $GITHUB_OUTPUT
-            echo "deployment_running=false" >> $GITHUB_OUTPUT
-            echo "branch_never_deployed=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No Amplify app found"
           fi
 
       - name: Update SSM with VITE_API_URL
-        if: (needs.deploy-terraform.outputs.frontend == 'true' || steps.amplify-status.outputs.app_exists == 'false' || steps.amplify-status.outputs.branch_never_deployed == 'true') && steps.amplify-status.outputs.deployment_running != 'true'
         run: |
           ALB_DNS="${{ env.ALB_DNS }}"
           if [ -z "$ALB_DNS" ]; then
@@ -314,11 +277,10 @@ jobs:
               --overwrite
             echo "VITE_API_URL updated"
           else
-            echo "Warning: ALB DNS not found, skipping SSM update"
+            echo "Warning: ALB DNS not found"
           fi
 
       - name: Get or Create Amplify App
-        if: (needs.deploy-terraform.outputs.frontend == 'true' || steps.amplify-status.outputs.app_exists == 'false' || steps.amplify-status.outputs.branch_never_deployed == 'true') && steps.amplify-status.outputs.deployment_running != 'true'
         run: |
           if [ -z "${{ env.APP_ID }}" ]; then
             echo "Creating new Amplify app..."
@@ -332,33 +294,34 @@ jobs:
               echo "Created Amplify app: $APP_ID"
               echo "APP_ID=$APP_ID" >> $GITHUB_ENV
             else
-              echo "GH_TOKEN not set - skipping Amplify"
-              exit 0
+              echo "GH_TOKEN not set - Amplify creation skipped"
             fi
           fi
 
       - name: Start Amplify build
-        if: (needs.deploy-terraform.outputs.frontend == 'true' || steps.amplify-status.outputs.app_exists == 'false' || steps.amplify-status.outputs.branch_never_deployed == 'true') && env.APP_ID != '' && steps.amplify-status.outputs.deployment_running != 'true'
         run: |
-          aws amplify get-branch \
-            --app-id ${{ env.APP_ID }} \
-            --branch-name prod \
-            || aws amplify create-branch \
+          if [ -n "${{ env.APP_ID }}" ]; then
+            echo "Starting Amplify deployment..."
+            
+            # Create branch if needed
+            aws amplify get-branch \
               --app-id ${{ env.APP_ID }} \
               --branch-name prod \
-              --stage PRODUCTION
+              || aws amplify create-branch \
+                --app-id ${{ env.APP_ID }} \
+                --branch-name prod \
+                --stage PRODUCTION
           
-          JOB_ID=$(aws amplify start-deployment \
-            --app-id ${{ env.APP_ID }} \
-            --branch-name prod \
-            --query 'jobId' \
-            --output text)
+            JOB_ID=$(aws amplify start-deployment \
+              --app-id ${{ env.APP_ID }} \
+              --branch-name prod \
+              --query 'jobId' \
+              --output text)
           
-          echo "Started build: $JOB_ID"
-
-      - name: No frontend changes
-        if: needs.deploy-terraform.outputs.frontend != 'true' && steps.amplify-status.outputs.app_exists == 'true' && steps.amplify-status.outputs.branch_never_deployed != 'true'
-        run: echo "No frontend changes and Amplify app exists - skipping frontend deployment"
+            echo "Started Amplify deployment: $JOB_ID"
+          else
+            echo "No APP_ID - skipping Amplify deployment"
+          fi
 
   # ============================================
   # Summary
