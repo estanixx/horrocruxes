@@ -42,7 +42,7 @@ applications:
           - '**/*'
       cache:
         paths:
-          - frontend/node_modules/**/*
+          - /node_modules/**/*
 EOT
 
   # Custom rewrite rules for SPA
