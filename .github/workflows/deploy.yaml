@@ -47,7 +47,6 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-          from: main
 
       - name: Detect frontend changes
         id: frontend-changes
@@ -56,7 +55,6 @@ jobs:
           filters: |
             frontend:
               - 'frontend/**'
-          from: main
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -100,6 +98,8 @@ jobs:
           echo "ALB_DNS=$(terraform output -raw backend_alb_dns_name)" >> $GITHUB_ENV
           echo "BACKEND_CHANGES=${{ needs.deploy-terraform.outputs.backend }}" >> $GITHUB_ENV
           echo "FRONTEND_CHANGES=${{ needs.deploy-terraform.outputs.frontend }}" >> $GITHUB_ENV
+          echo "Backend changed: ${{ needs.deploy-terraform.outputs.backend }}"
+          echo "Frontend changed: ${{ needs.deploy-terraform.outputs.frontend }}"
           echo "✅ Terraform infrastructure deployed"
 
   # ============================================
@@ -140,13 +140,13 @@ jobs:
           fi
 
       - name: Set image tag
-        if: needs.deploy-terraform.outputs.backend_changed == 'true' || steps.image-exists.outputs.image_exists == 'false'
+        if: needs.deploy-terraform.outputs.backend == 'true' || steps.image-exists.outputs.image_exists == 'false'
         run: |
           IMAGE_TAG="v${{ github.sha }}"
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Build and push backend image
-        if: needs.deploy-terraform.outputs.backend_changed == 'true' || steps.image-exists.outputs.image_exists == 'false'
+        if: needs.deploy-terraform.outputs.backend == 'true' || steps.image-exists.outputs.image_exists == 'false'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
@@ -160,7 +160,7 @@ jobs:
           docker push $ECR_REGISTRY/${{ env.BACKEND_ECR }}:latest
 
       - name: Update ECS task definition
-        if: needs.deploy-terraform.outputs.backend_changed == 'true' || steps.image-exists.outputs.image_exists == 'false'
+        if: needs.deploy-terraform.outputs.backend == 'true' || steps.image-exists.outputs.image_exists == 'false'
         run: |
           ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}
           
@@ -181,7 +181,7 @@ jobs:
           fi
 
       - name: Update ECS service
-        if: needs.deploy-terraform.outputs.backend_changed == 'true' || steps.image-exists.outputs.image_exists == 'false'
+        if: needs.deploy-terraform.outputs.backend == 'true' || steps.image-exists.outputs.image_exists == 'false'
         run: |
           aws ecs update-service \
             --cluster horrocruxes-backend-production \
@@ -190,7 +190,7 @@ jobs:
             echo "Service update skipped - may not exist yet"
 
       - name: Wait for deployment
-        if: needs.deploy-terraform.outputs.backend_changed == 'true' || steps.image-exists.outputs.image_exists == 'false'
+        if: needs.deploy-terraform.outputs.backend == 'true' || steps.image-exists.outputs.image_exists == 'false'
         run: |
           aws ecs wait services-stable \
             --cluster horrocruxes-backend-production \
@@ -198,7 +198,7 @@ jobs:
             echo "Wait skipped - cluster may not be ready"
 
       - name: No backend changes
-        if: needs.deploy-terraform.outputs.backend_changed != 'true' && steps.image-exists.outputs.image_exists == 'true'
+        if: needs.deploy-terraform.outputs.backend != 'true' && steps.image-exists.outputs.image_exists == 'true'
         run: echo "No backend changes and image exists - skipping backend deployment"
 
       - name: Get ALB DNS
@@ -239,8 +239,8 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Check if Amplify app exists
-        id: amplify-exists
+      - name: Check Amplify app, jobs, and branch status
+        id: amplify-status
         run: |
           APP_ID=$(aws amplify list-apps \
             --query "apps[?name=='horrocruxes-production'].appId" \
@@ -249,12 +249,52 @@ jobs:
           if [ -n "$APP_ID" ]; then
             echo "app_exists=true" >> $GITHUB_OUTPUT
             echo "APP_ID=$APP_ID" >> $GITHUB_ENV
+            
+            # Check if there's an active job running
+            ACTIVE_JOB=$(aws amplify list-jobs \
+              --app-id $APP_ID \
+              --branch-name prod \
+              --max-items 1 \
+              --query "jobSummaries[0].[status]" \
+              --output text 2>/dev/null || echo "NONE")
+            
+            if [ "$ACTIVE_JOB" = "RUNNING" ] || [ "$ACTIVE_JOB" = "PENDING" ]; then
+              echo "deployment_running=true" >> $GITHUB_OUTPUT
+              echo "⚠️ Amplify deployment already running: $ACTIVE_JOB"
+            else
+              echo "deployment_running=false" >> $GITHUB_OUTPUT
+            fi
+            
+            # Check if branch has been updated (created == updated means no deploy yet)
+            BRANCH_INFO=$(aws amplify get-branch \
+              --app-id $APP_ID \
+              --branch-name prod \
+              --query 'branch.createTime' \
+              --output text 2>/dev/null || echo "")
+            
+            BRANCH_UPDATE=$(aws amplify get-branch \
+              --app-id $APP_ID \
+              --branch-name prod \
+              --query 'branch.updateTime' \
+              --output text 2>/dev/null || echo "")
+            
+            echo "Branch created: $BRANCH_INFO"
+            echo "Branch updated: $BRANCH_UPDATE"
+            
+            if [ "$BRANCH_INFO" = "$BRANCH_UPDATE" ] && [ -n "$BRANCH_INFO" ]; then
+              echo "branch_never_deployed=true" >> $GITHUB_OUTPUT
+              echo "⚠️ Branch has never been deployed (created == updated)"
+            else
+              echo "branch_never_deployed=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "app_exists=false" >> $GITHUB_OUTPUT
+            echo "deployment_running=false" >> $GITHUB_OUTPUT
+            echo "branch_never_deployed=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Update SSM with VITE_API_URL
-        if: needs.deploy-terraform.outputs.frontend_changed == 'true' || steps.amplify-exists.outputs.app_exists == 'false'
+        if: (needs.deploy-terraform.outputs.frontend == 'true' || steps.amplify-status.outputs.app_exists == 'false' || steps.amplify-status.outputs.branch_never_deployed == 'true') && steps.amplify-status.outputs.deployment_running != 'true'
         run: |
           ALB_DNS="${{ env.ALB_DNS }}"
           if [ -z "$ALB_DNS" ]; then
@@ -276,7 +316,7 @@ jobs:
           fi
 
       - name: Get or Create Amplify App
-        if: needs.deploy-terraform.outputs.frontend_changed == 'true' || steps.amplify-exists.outputs.app_exists == 'false'
+        if: (needs.deploy-terraform.outputs.frontend == 'true' || steps.amplify-status.outputs.app_exists == 'false' || steps.amplify-status.outputs.branch_never_deployed == 'true') && steps.amplify-status.outputs.deployment_running != 'true'
         run: |
           if [ -z "${{ env.APP_ID }}" ]; then
             echo "Creating new Amplify app..."
@@ -296,7 +336,7 @@ jobs:
           fi
 
       - name: Start Amplify build
-        if: (needs.deploy-terraform.outputs.frontend_changed == 'true' || steps.amplify-exists.outputs.app_exists == 'false') && env.APP_ID != ''
+        if: (needs.deploy-terraform.outputs.frontend == 'true' || steps.amplify-status.outputs.app_exists == 'false' || steps.amplify-status.outputs.branch_never_deployed == 'true') && env.APP_ID != '' && steps.amplify-status.outputs.deployment_running != 'true'
         run: |
           aws amplify get-branch \
             --app-id ${{ env.APP_ID }} \
@@ -316,7 +356,7 @@ jobs:
           echo "Started build: $JOB_ID"
 
       - name: No frontend changes
-        if: needs.deploy-terraform.outputs.frontend_changed != 'true' && steps.amplify-exists.outputs.app_exists == 'true'
+        if: needs.deploy-terraform.outputs.frontend != 'true' && steps.amplify-status.outputs.app_exists == 'true' && steps.amplify-status.outputs.branch_never_deployed != 'true'
         run: echo "No frontend changes and Amplify app exists - skipping frontend deployment"
 
   # ============================================
@@ -350,7 +390,7 @@ jobs:
             echo "❌ Backend FAILED"
             BACKEND_STATUS="❌ Failed"
             EXIT_CODE=1
-          elif [ "${{ needs.deploy-terraform.outputs.backend_changed }}" = "false" ]; then
+          elif [ "${{ needs.deploy-terraform.outputs.backend }}" = "false" ]; then
             echo "⏭️ Backend skipped (no changes)"
             BACKEND_STATUS="⏭️ Skipped - No backend changes"
           elif [ "${{ needs.deploy-backend.result }}" = "skipped" ]; then
@@ -366,7 +406,7 @@ jobs:
             echo "❌ Frontend FAILED"
             FRONTEND_STATUS="❌ Failed"
             EXIT_CODE=1
-          elif [ "${{ needs.deploy-terraform.outputs.frontend_changed }}" = "false" ]; then
+          elif [ "${{ needs.deploy-terraform.outputs.frontend }}" = "false" ]; then
             echo "⏭️ Frontend skipped (no changes)"
             FRONTEND_STATUS="⏭️ Skipped - No frontend changes"
           elif [ "${{ needs.deploy-frontend.result }}" = "skipped" ]; then
