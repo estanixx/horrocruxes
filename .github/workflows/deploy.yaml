@@ -213,11 +213,11 @@ jobs:
           
           if [ -n "$ALB_DNS" ]; then
             echo "ALB_DNS=$ALB_DNS" >> $GITHUB_ENV
-            echo "Backend: http://$ALB_DNS:8000"
+            echo "Backend: http://$ALB_DNS"
           else
             ALB_DNS=$(terraform output -raw backend_alb_dns_name 2>/dev/null || echo "")
             echo "ALB_DNS=$ALB_DNS" >> $GITHUB_ENV
-            echo "Backend: http://$ALB_DNS:8000"
+            echo "Backend: http://$ALB_DNS"
           fi
 
   # ============================================
