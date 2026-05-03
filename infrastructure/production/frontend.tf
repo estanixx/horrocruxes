@@ -66,7 +66,7 @@ resource "aws_amplify_branch" "prod" {
   branch_name = "prod"
   stage       = "PRODUCTION"
   
-  enable_auto_build = true
+  enable_auto_build = false
   
   framework = "React"
   
