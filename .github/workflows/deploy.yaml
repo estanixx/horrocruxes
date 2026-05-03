@@ -286,10 +286,10 @@ jobs:
             echo "✅ Found ALB: $ALB_DNS"
             aws ssm put-parameter \
               --name /horrocruxes/production/VITE_API_URL \
-              --value "http://$ALB_DNS:8080" \
+              --value "http://$ALB_DNS" \
               --type String \
               --overwrite
-            echo "VITE_API_URL updated to: http://$ALB_DNS:8080"
+            echo "VITE_API_URL updated to: http://$ALB_DNS"
           else
             echo "❌ ALB DNS not found - backend may not be deployed"
           fi
