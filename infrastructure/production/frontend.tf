@@ -47,7 +47,7 @@ EOT
 
   # Custom rewrite rules for SPA
   custom_rule {
-    source = "/<*>"
+    source = "</^[^.]+$|\\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|ttf|map|json|webp)$)([^.]+$)/>"
     status = "200"
     target = "/index.html"
   }
