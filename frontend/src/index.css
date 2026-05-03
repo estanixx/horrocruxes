@@ -11,9 +11,17 @@
 body {
   min-height: 100vh;
   font-family: Georgia, "Times New Roman", serif;
+
   background:
+    linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.65)),
     radial-gradient(circle at top, rgba(255, 215, 120, 0.12), transparent 30%),
-    linear-gradient(180deg, #0d0b14 0%, #1a1326 45%, #120d1c 100%);
+    url("./assets/harry.jpg");
+
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+
   color: #f5e9c9;
 }
 
@@ -33,7 +41,7 @@ input {
 .main-card {
   width: 100%;
   max-width: 960px;
-  background: rgba(20, 15, 28, 0.95);
+  background: rgba(20, 15, 28, 0.82);
   border: 1px solid rgba(212, 175, 55, 0.35);
   border-radius: 24px;
   padding: 36px;
