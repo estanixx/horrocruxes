@@ -43,7 +43,7 @@ function QuestionBox({
       </div>
 
       <p className="helper-text">
-        Example: Who destroyed the Slitheryn locket?
+        Example: Who destroyed the Slitheryn locket? 
       </p>
     </div>
   );

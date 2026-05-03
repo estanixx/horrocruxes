@@ -44,6 +44,7 @@ jobs:
         id: backend-changes
         uses: dorny/paths-filter@v2
         with:
+          from: prod
           filters: |
             backend:
               - 'backend/**'
@@ -52,6 +53,7 @@ jobs:
         id: frontend-changes
         uses: dorny/paths-filter@v2
         with:
+          from: prod
           filters: |
             frontend:
               - 'frontend/**'
