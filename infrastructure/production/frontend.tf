@@ -2,11 +2,20 @@
 # Horrocruxes Production Frontend - Amplify
 # ============================================
 
+# Data source for GitHub access token from SSM
+data "aws_ssm_parameter" "github_token" {
+  name = "/horrocruxes/${var.environment}/github-access-token"
+}
+
 # ============================================
 # Amplify App with React (builds from GitHub)
 # ============================================
 resource "aws_amplify_app" "frontend" {
-  name = "horrocruxes-${var.environment}"
+  name       = "horrocruxes-${var.environment}"
+  repository = "https://github.com/juane/horrocruxes"
+  
+  # GitHub personal access token (from SSM)
+  access_token = data.aws_ssm_parameter.github_token.value
   
   # Custom rewrite rules for SPA
   custom_rule {
@@ -19,9 +28,6 @@ resource "aws_amplify_app" "frontend" {
   environment_variables = {
     VITE_API_URL = data.aws_ssm_parameter.vite_api_url.value
   }
-  
-  # Note: Production branch will be created automatically when GitHub is connected
-  # OR use aws_amplify_branch resource to create manually
   
   tags = {
     Project     = "horrocruxes"

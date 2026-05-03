@@ -46,6 +46,12 @@ Parameters:
     Description: Pinecone API Key (will be stored in SSM)
     Default: ""
 
+  GitHubAccessToken:
+    Type: String
+    Description: GitHub Personal Access Token for Amplify (Classic token with repo scope)
+    Default: ""
+    NoEcho: true
+
 Resources:
 
 
@@ -252,6 +258,15 @@ Resources:
       Description: Backend API URL for frontend (update after ALB is created)
       Tier: Standard
 
+  GitHubAccessTokenParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/horrocruxes/${Environment}/github-access-token"
+      Type: String
+      Value: !Ref GitHubAccessToken
+      Description: GitHub Personal Access Token for Amplify GitHub connection
+      Tier: Standard
+
 
 
 Outputs:
@@ -298,6 +313,7 @@ Metadata:
         Parameters:
           - GoogleAPIKey
           - PineconeAPIKey
+          - GitHubAccessToken
 
     ParameterLabels:
       GitHubOrg:
@@ -312,6 +328,8 @@ Metadata:
         default: "Google API Key"
       PineconeAPIKey:
         default: "Pinecone API Key"
+      GitHubAccessToken:
+        default: "GitHub Access Token"
       EcrRepositoryName:
         default: "ECR Repository Name"
       Environment:

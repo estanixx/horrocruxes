@@ -282,31 +282,60 @@ jobs:
 
       - name: Get or Create Amplify App with GitHub
         run: |
-          if [ -z "${{ env.APP_ID }}" ]; then
-            echo "Creating new Amplify app with GitHub connection..."
-            if [ -n "${{ secrets.GH_TOKEN }}" ]; then
-              # Create app with GitHub repo and branch
+          echo "GH_TOKEN set: $([ -n '${{ secrets.GH_TOKEN }}' ] && echo 'yes' || echo 'no')"
+          echo "Current APP_ID: ${{ env.APP_ID }}"
+          
+          if [ -n "${{ secrets.GH_TOKEN }}" ]; then
+            if [ -z "${{ env.APP_ID }}" ]; then
+              echo "Creating new Amplify app with GitHub connection..."
+              
               APP_ID=$(aws amplify create-app \
                 --name horrocruxes-production \
-                --repository https://github.com/${{ github.repository }} \
+                --repository "https://github.com/${{ github.repository }}" \
                 --oauth-token "${{ secrets.GH_TOKEN }}" \
                 --default-branch prod \
                 --query 'app.appId' \
-                --output text)
-              echo "Created Amplify app: $APP_ID"
-              echo "APP_ID=$APP_ID" >> $GITHUB_ENV
+                --output text 2>&1)
               
-              # Wait for app to be ready
-              echo "Waiting for app to be ready..."
-              sleep 10
+              echo "Create result: $APP_ID"
+              
+              if echo "$APP_ID" | grep -q "^a"; then
+                echo "Created Amplify app: $APP_ID"
+                echo "APP_ID=$APP_ID" >> $GITHUB_ENV
+                sleep 15
+              else
+                echo "Failed to create app: $APP_ID"
+              fi
             else
-              echo "GH_TOKEN not set - Amplify creation skipped"
+              echo "Using existing Amplify app: ${{ env.APP_ID }}"
+              
+              # Check if connected to GitHub
+              APP_DETAILS=$(aws amplify get-app --app-id ${{ env.APP_ID }} 2>&1)
+              REPO_INFO=$(echo "$APP_DETAILS" | jq -r '.app.repository // "none"' 2>/dev/null || echo "none")
+              echo "Repository: $REPO_INFO"
+              
+              if [ -z "$REPO_INFO" ] || [ "$REPO_INFO" = "none" ] || [ "$REPO_INFO" = "null" ]; then
+                echo "⚠️ App not connected to GitHub - trying update-app..."
+                
+                # Try to update the app to connect to GitHub
+                UPDATE_RESULT=$(aws amplify update-app \
+                  --app-id ${{ env.APP_ID }} \
+                  --repository "https://github.com/${{ github.repository }}" \
+                  --oauth-token "${{ secrets.GH_TOKEN }}" \
+                  --default-branch prod \
+                  2>&1)
+                
+                echo "Update result: $UPDATE_RESULT"
+                sleep 10
+                
+                # Check again
+                APP_DETAILS=$(aws amplify get-app --app-id ${{ env.APP_ID }} 2>&1)
+                REPO_INFO=$(echo "$APP_DETAILS" | jq -r '.app.repository // "none"' 2>/dev/null || echo "none")
+                echo "After update, Repository: $REPO_INFO"
+              fi
             fi
           else
-            echo "Using existing Amplify app: ${{ env.APP_ID }}"
-            # Check if it's connected to GitHub
-            REPO_INFO=$(aws amplify get-app --app-id ${{ env.APP_ID }} --query 'app.repository' --output text 2>/dev/null || echo "")
-            echo "Repository: $REPO_INFO"
+            echo "GH_TOKEN not set - Amplify skipped"
           fi
 
       - name: Start Amplify build
