@@ -130,6 +130,7 @@ Resources:
                   - amplify:DeleteBranch
                   - amplify:CreateWebhook
                   - amplify:DeleteWebhook
+                  - amplify:StartJob
                   - amplify:TagResource
                   - amplify:UntagResource
                   - amplify:ListApps

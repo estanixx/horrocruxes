@@ -174,6 +174,28 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# SSM access for execution role (to pull secrets at startup)
+resource "aws_iam_role_policy" "ecs_execution_ssm" {
+  name = "ExecutionRoleSSM-${var.environment}"
+  role = aws_iam_role.ecs_task_execution.id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/horrocruxes/production/*"
+        ]
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role" "ecs_task_role" {
   name = "horrocruxes-ecs-task-${var.environment}"
   
