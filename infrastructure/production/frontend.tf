@@ -42,19 +42,14 @@ applications:
           - '**/*'
       cache:
         paths:
-          - /node_modules/**/*
+          - node_modules/**/*
 EOT
 
   # Custom rewrite rules for SPA
   # Order matters: specific patterns first, then catch-all
+  # CRITICAL: Catch-all rule for Single Page Applications (Vite/React)
   custom_rule {
-    source = "/<*.json>"
-    status = "200"
-    target = "/index.html"
-  }
-  
-  custom_rule {
-    source = "/<*>"
+    source = "</^[^.]+$|\\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|ttf|map|json|webp)$)([^.]+$)/>"
     status = "200"
     target = "/index.html"
   }
