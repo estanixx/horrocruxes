@@ -298,36 +298,43 @@ jobs:
               
               # Wait for app to be ready
               echo "Waiting for app to be ready..."
-              sleep 5
+              sleep 10
             else
               echo "GH_TOKEN not set - Amplify creation skipped"
             fi
           else
             echo "Using existing Amplify app: ${{ env.APP_ID }}"
+            # Check if it's connected to GitHub
+            REPO_INFO=$(aws amplify get-app --app-id ${{ env.APP_ID }} --query 'app.repository' --output text 2>/dev/null || echo "")
+            echo "Repository: $REPO_INFO"
           fi
 
       - name: Start Amplify build
         run: |
           if [ -n "${{ env.APP_ID }}" ]; then
-            echo "Starting Amplify build..."
+            echo "Starting Amplify build for app: ${{ env.APP_ID }}"
             
-            # Try start-job first (works if GitHub connected)
+            # First create/ensure branch exists
+            aws amplify create-branch \
+              --app-id ${{ env.APP_ID }} \
+              --branch-name prod \
+              --stage PRODUCTION \
+              2>/dev/null || echo "Branch already exists"
+            
+            # Try start-job (requires GitHub connection)
             JOB_ID=$(aws amplify start-job \
               --app-id ${{ env.APP_ID }} \
               --branch-name prod \
               --job-type RELEASE \
               --query 'jobId' \
-              --output text 2>/dev/null) && echo "Started build job: $JOB_ID" || \
-            (
-              # Fallback: try start-deployment
-              echo "start-job failed, trying start-deployment..."
-              JOB_ID=$(aws amplify start-deployment \
-                --app-id ${{ env.APP_ID }} \
-                --branch-name prod \
-                --query 'jobId' \
-                --output text 2>/dev/null) && echo "Started deployment: $JOB_ID" || \
-              echo "Both failed - manual deployment needed"
-            )
+              --output text 2>&1)
+            
+            if echo "$JOB_ID" | grep -q "^j-"; then
+              echo "✅ Started build job: $JOB_ID"
+            else
+              echo "⚠️ start-job failed: $JOB_ID"
+              echo "The app needs to be connected to GitHub. Please check Amplify console."
+            fi
           else
             echo "No APP_ID - skipping Amplify build"
           fi
