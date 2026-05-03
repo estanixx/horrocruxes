@@ -314,26 +314,32 @@ jobs:
           if [ -n "${{ env.APP_ID }}" ]; then
             echo "Starting Amplify build for app: ${{ env.APP_ID }}"
             
-            # First create/ensure branch exists
-            aws amplify create-branch \
-              --app-id ${{ env.APP_ID }} \
-              --branch-name prod \
-              --stage PRODUCTION \
-              2>/dev/null || echo "Branch already exists"
-            
             # Try start-job (requires GitHub connection)
-            JOB_ID=$(aws amplify start-job \
+            echo "Triggering Amplify build..."
+            
+            JOB_RESULT=$(aws amplify start-job \
               --app-id ${{ env.APP_ID }} \
               --branch-name prod \
               --job-type RELEASE \
               --query 'jobId' \
               --output text 2>&1)
             
-            if echo "$JOB_ID" | grep -q "^j-"; then
-              echo "✅ Started build job: $JOB_ID"
+            echo "Result: $JOB_RESULT"
+            
+            if echo "$JOB_RESULT" | grep -q "^j-"; then
+              echo "✅ Started build job: $JOB_RESULT"
+              exit 0
             else
-              echo "⚠️ start-job failed: $JOB_ID"
-              echo "The app needs to be connected to GitHub. Please check Amplify console."
+              echo "⚠️ start-job failed - checking if GitHub is connected..."
+              # Check app repo connection
+              REPO=$(aws amplify get-app --app-id ${{ env.APP_ID }} --query 'app.repository' --output text 2>&1 || echo "none")
+              echo "Connected repo: $REPO"
+              if [ "$REPO" = "none" ] || [ -z "$REPO" ]; then
+                echo "❌ App is not connected to GitHub. Please connect manually in Amplify console."
+                exit 1
+              fi
+              echo "⚠️ Unexpected error: $JOB_RESULT"
+              exit 1
             fi
           else
             echo "No APP_ID - skipping Amplify build"
