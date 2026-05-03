@@ -8,25 +8,48 @@ data "aws_ssm_parameter" "github_token" {
 }
 
 # ============================================
-# Amplify App with React (builds from GitHub)
+# Amplify App with React (builds from GitHub via Amplify GitHub App)
 # ============================================
 resource "aws_amplify_app" "frontend" {
   name       = "horrocruxes-${var.environment}"
   repository = var.frontend_repository
   
-  # GitHub personal access token (from SSM)
+  # Token needed for initial creation - Amplify GitHub App handles deployments
   access_token = data.aws_ssm_parameter.github_token.value
   
+  # Monorepo diff deployment - ignores backend changes
+  environment_variables = {
+    AMPLIFY_DIFF_DEPLOY = "true"
+    VITE_API_URL        = data.aws_ssm_parameter.vite_api_url.value
+  }
+  
+  # Build spec for monorepo (frontend only)
+  build_spec = <<-EOT
+version: 1
+applications:
+  - frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: dist
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
+    appRoot: frontend
+EOT
+
   # Custom rewrite rules for SPA
   custom_rule {
     source = "/<*>"
     status = "200"
     target = "/index.html"
-  }
-  
-  # Environment variables as map
-  environment_variables = {
-    VITE_API_URL = data.aws_ssm_parameter.vite_api_url.value
   }
   
   tags = {
@@ -49,9 +72,7 @@ resource "aws_amplify_branch" "prod" {
   
   # Environment variables as map
   environment_variables = {
-    VITE_API_URL = data.aws_ssm_parameter.vite_api_url.value
+    AMPLIFY_DIFF_DEPLOY = "true"
+    VITE_API_URL        = data.aws_ssm_parameter.vite_api_url.value
   }
 }
-
-# Note: Webhooks are created automatically by Amplify when connected to GitHub
-# No need to create manually
