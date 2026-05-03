@@ -316,7 +316,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_lb_target_group" "backend" {
-  name     = "horrocruxes-backend-${var.environment}"
+  name     = "horrocruxes-backend-${var.environment}-tg"
   port     = 8080
   protocol = "HTTP"
   vpc_id   = data.aws_vpc.default.id
