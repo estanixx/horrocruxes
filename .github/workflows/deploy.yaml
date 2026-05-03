@@ -346,10 +346,9 @@ jobs:
               --branch-name prod \
               --stage PRODUCTION
           
-          JOB_ID=$(aws amplify start-job \
+          JOB_ID=$(aws amplify start-deployment \
             --app-id ${{ env.APP_ID }} \
             --branch-name prod \
-            --job-type RELEASE \
             --query 'jobId' \
             --output text)
           
