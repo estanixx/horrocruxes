@@ -93,6 +93,60 @@ Resources:
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/horrocruxes-alb-*"
+        - PolicyName: EC2FullAccessForTerraform
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:CreateSecurityGroup
+                  - ec2:DeleteSecurityGroup
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:CreateTags
+                  - ec2:DescribeTags
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeRouteTables
+                Resource: "*"
+        - PolicyName: AmplifyFullAccessForTerraform
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - amplify:CreateApp
+                  - amplify:UpdateApp
+                  - amplify:DeleteApp
+                  - amplify:GetApp
+                  - amplify:GetBranch
+                  - amplify:CreateBranch
+                  - amplify:UpdateBranch
+                  - amplify:DeleteBranch
+                  - amplify:CreateWebhook
+                  - amplify:DeleteWebhook
+                  - amplify:TagResource
+                  - amplify:UntagResource
+                  - amplify:ListApps
+                  - amplify:ListBranches
+                Resource: "*"
+        - PolicyName: AppAutoScalingFullAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - application-autoscaling:RegisterScalableTarget
+                  - application-autoscaling:DeregisterScalableTarget
+                  - application-autoscaling:DescribeScalableTargets
+                  - application-autoscaling:TagResource
+                  - application-autoscaling:ListTagsForResource
+                Resource: "*"
         - PolicyName: SSMParameterAccess
           PolicyDocument:
             Version: "2012-10-17"

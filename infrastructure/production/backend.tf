@@ -189,26 +189,28 @@ resource "aws_iam_role" "ecs_task_role" {
       }
     ]
   })
+}
+
+# Custom policy for accessing SSM parameters (replaces deprecated inline_policy)
+resource "aws_iam_role_policy" "ecs_task_ssm" {
+  name = "SSMReadPolicy-${var.environment}"
+  role = aws_iam_role.ecs_task_role.id
   
-  # Custom policy for accessing SSM parameters
-  inline_policy {
-    name = "SSMReadPolicy"
-    policy = jsonencode({
-      Version = "2012-10-17"
-      Statement = [
-        {
-          Effect = "Allow"
-          Action = [
-            "ssm:GetParameters",
-            "ssm:GetParameter"
-          ]
-          Resource = [
-            "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/horrocruxes/production/*"
-          ]
-        }
-      ]
-    })
-  }
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/horrocruxes/production/*"
+        ]
+      }
+    ]
+  })
 }
 
 data "aws_caller_identity" "current" {}

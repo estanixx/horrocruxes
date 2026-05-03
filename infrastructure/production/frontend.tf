@@ -47,11 +47,5 @@ resource "aws_amplify_branch" "prod" {
   }
 }
 
-# ============================================
-# Amplify Webhook for GitHub
-# ============================================
-resource "aws_amplify_webhook" "prod" {
-  app_id      = aws_amplify_app.frontend.id
-  branch_name = "prod"
-  description = "Webhook for prod branch deployment"
-}
+# Note: Webhooks are created automatically by Amplify when connected to GitHub
+# No need to create manually
