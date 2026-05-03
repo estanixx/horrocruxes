@@ -23,7 +23,7 @@ resource "aws_amplify_app" "frontend" {
     VITE_API_URL        = data.aws_ssm_parameter.vite_api_url.value
   }
   
-  # Build spec for frontend (in frontend/ subfolder)
+  # Build spec for frontend (appRoot: frontend means commands run inside that folder)
   build_spec = <<-EOT
 version: 1
 applications:
@@ -32,17 +32,17 @@ applications:
       phases:
         preBuild:
           commands:
-            - cd frontend && npm ci
+            - npm ci
         build:
           commands:
-            - cd frontend && npm run build
+            - npm run build
       artifacts:
-        baseDirectory: frontend/dist
+        baseDirectory: dist
         files:
           - '**/*'
       cache:
         paths:
-          - frontend/node_modules/**/*
+          - node_modules/**/*
 EOT
 
   # Custom rewrite rules for SPA
