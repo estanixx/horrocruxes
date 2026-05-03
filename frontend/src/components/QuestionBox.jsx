@@ -19,7 +19,7 @@ function QuestionBox({
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Escribe tu pregunta aquí..."
+          placeholder="Write your question here..."
           className="question-input"
           disabled={loading}
         />
@@ -43,7 +43,7 @@ function QuestionBox({
       </div>
 
       <p className="helper-text">
-        Ejemplo: ¿Quién destruyó el relicario de Slytherin?
+        Example: Who destroyed the Slitheryn locket?
       </p>
     </div>
   );
