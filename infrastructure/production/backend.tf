@@ -26,18 +26,8 @@ data "aws_vpc" "default" {
   default = true
 }
 
-data "aws_subnets" "private" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-  tags = {
-    Type = "private"
-  }
-}
-
-# If no tagged subnets, use all availability zone subnets
-data "aws_subnets" "all" {
+# Get all subnets in default VPC
+data "aws_subnets" "default" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
@@ -176,10 +166,12 @@ resource "aws_iam_role" "ecs_task_execution" {
       }
     ]
   })
-  
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-  ]
+}
+
+# Attach managed policy using resource (not deprecated)
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
+  role       = aws_iam_role.ecs_task_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
 resource "aws_iam_role" "ecs_task_role" {
@@ -257,7 +249,7 @@ resource "aws_lb" "backend" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = length(data.aws_subnets.private.ids) > 0 ? data.aws_subnets_private.ids : data.aws_subnets.all.ids
+  subnets            = data.aws_subnets.default.ids
   
   enable_deletion_protection = false
   
@@ -383,9 +375,9 @@ resource "aws_ecs_service" "backend" {
   launch_type     = "FARGATE"
   
   network_configuration {
-    subnets          = length(data.aws_subnets.private.ids) > 0 ? data.aws_subnets_private.ids : data.aws_subnets.all.ids
+    subnets          = data.aws_subnets.default.ids
     security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = false
+    assign_public_ip = true  # Use public subnets
   }
   
   load_balancer {
@@ -394,7 +386,7 @@ resource "aws_ecs_service" "backend" {
     container_port   = 8000
   }
   
-  depends_on = [aws_lb_listener.https]
+  depends_on = [aws_lb_listener.http]
   
   # Auto-scaling
   deployment_circuit_breaker {
@@ -409,31 +401,17 @@ resource "aws_ecs_service" "backend" {
 }
 
 # ============================================
-# Auto Scaling
+# Auto Scaling - Basic target without policy
 # ============================================
 resource "aws_appautoscaling_target" "ecs_target" {
   max_capacity       = 4
   min_capacity       = 2
   resource_id        = "service/${aws_ecs_cluster.backend.name}/${aws_ecs_service.backend.name}"
   scalable_dimension = "ecs:service:DesiredCount"
-  role_arn          = aws_iam_role.ecs_autoscaling.arn
+  service_namespace  = "ecs"
 }
 
-resource "aws_appautoscaling_policy" "cpu_scaling" {
-  name               = "horrocruxes-cpu-scaling-${var.environment}"
-  policy_type        = "TargetTrackingScaling"
-  scaling_target_id = aws_appautoscaling_target.ecs_target.id
-  
-  target_tracking_scaling_policy_configuration {
-    predefined_metric_specification {
-      predefined_metric_type = "ECSServiceAverageCPUUtilization"
-    }
-    target_value       = 70
-    scale_in_cooldown  = 60
-    scale_out_cooldown = 60
-  }
-}
-
+# Basic auto-scaling role
 resource "aws_iam_role" "ecs_autoscaling" {
   name = "horrocruxes-ecs-autoscaling-${var.environment}"
   
@@ -449,18 +427,9 @@ resource "aws_iam_role" "ecs_autoscaling" {
       }
     ]
   })
-  
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole"
-  ]
 }
 
-# Fix reference to private subnets
-locals {
-  subnet_ids = length(data.aws_subnets.private.ids) > 0 ? data.aws_subnets.private.ids : data.aws_subnets.all.ids
-}
-
-data "aws_subnet" "private" {
-  for_each = toset(local.subnet_ids)
-  id       = each.value
+resource "aws_iam_role_policy_attachment" "ecs_autoscale_policy" {
+  role       = aws_iam_role.ecs_autoscaling.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole"
 }

@@ -112,12 +112,16 @@ Resources:
                   - s3:ListBucket
                   - s3:GetObject
                   - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::horrocruxes-terraform-state"
+                  - s3:DeleteObject
+                Resource: 
+                  - !Sub "arn:aws:s3:::central-tfstate-estanix-871696174477"
+                  - !Sub "arn:aws:s3:::central-tfstate-estanix-871696174477/*"
               - Effect: Allow
                 Action:
                   - dynamodb:DescribeTable
                   - dynamodb:GetItem
                   - dynamodb:PutItem
+                  - dynamodb:DeleteItem
                 Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/horrocruxes-terraform-locks"
       Tags:
         - Key: "Project"
@@ -157,7 +161,7 @@ Resources:
       Tags:
         - Key: "Project"
           Value: "horrocruxes"
-- Key: "Environment"
+        - Key: "Environment"
           Value: !Ref Environment
 
   # ============================================

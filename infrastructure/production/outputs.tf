@@ -17,11 +17,6 @@ output "backend_ecr_repository_url" {
   value       = data.aws_ecr_repository.backend.repository_url
 }
 
-output "frontend_ecr_repository_url" {
-  description = "ECR repository URL for frontend"
-  value       = data.aws_ecr_repository.frontend.repository_url
-}
-
 output "frontend_url" {
   description = "Amplify frontend URL"
   value       = "https://${aws_amplify_app.frontend.default_domain}"
@@ -35,9 +30,4 @@ output "ecs_cluster_name" {
 output "backend_ecs_service_name" {
   description = "Backend ECS service name"
   value       = aws_ecs_service.backend.name
-}
-
-output "frontend_ecs_service_name" {
-  description = "Frontend ECS service name"
-  value       = aws_ecs_service.frontend.name
 }
