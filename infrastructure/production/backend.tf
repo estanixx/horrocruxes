@@ -133,7 +133,7 @@ resource "aws_ecs_task_definition" "backend" {
       }
       
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+        command     = ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
@@ -276,7 +276,7 @@ resource "aws_lb" "backend" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = data.aws_subnets.default.ids
-  
+  idle_timeout = 300
   enable_deletion_protection = false
   
   tags = {

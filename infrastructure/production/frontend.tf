@@ -32,19 +32,20 @@ applications:
       phases:
         preBuild:
           commands:
-            - npm ci
+            - cd frontend && npm ci
         build:
           commands:
-            - npm run build
+            - cd frontend && npm run build
       artifacts:
-        baseDirectory: dist
+        baseDirectory: frontend/dist
         files:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
+          - frontend/node_modules/**/*
 EOT
 
+  
   # Custom rewrite rules for SPA
   # Order matters: specific patterns first, then catch-all
   # CRITICAL: Catch-all rule for Single Page Applications (Vite/React)
