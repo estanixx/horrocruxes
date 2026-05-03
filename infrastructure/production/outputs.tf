@@ -9,7 +9,7 @@ output "backend_alb_dns_name" {
 
 output "backend_url" {
   description = "Full URL of the backend"
-  value       = "http://${aws_lb.backend.dns_name}:8000"
+  value       = "http://${aws_lb.backend.dns_name}:8080"
 }
 
 output "backend_ecr_repository_url" {

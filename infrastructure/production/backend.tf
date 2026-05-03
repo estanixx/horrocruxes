@@ -91,7 +91,7 @@ resource "aws_ecs_task_definition" "backend" {
       
       portMappings = [
         {
-          containerPort = 8000
+          containerPort = 8080
           protocol      = "tcp"
         }
       ]
@@ -317,7 +317,7 @@ resource "aws_security_group" "alb" {
 
 resource "aws_lb_target_group" "backend" {
   name     = "horrocruxes-backend-${var.environment}"
-  port     = 8000
+  port     = 8080
   protocol = "HTTP"
   vpc_id   = data.aws_vpc.default.id
   
