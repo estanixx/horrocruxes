@@ -12,7 +12,7 @@ data "aws_ssm_parameter" "github_token" {
 # ============================================
 resource "aws_amplify_app" "frontend" {
   name       = "horrocruxes-${var.environment}"
-  repository = "https://github.com/juane/horrocruxes"
+  repository = var.frontend_repository
   
   # GitHub personal access token (from SSM)
   access_token = data.aws_ssm_parameter.github_token.value
