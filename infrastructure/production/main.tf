@@ -12,23 +12,13 @@ terraform {
       version = "~> 5.0"
     }
   }
-}
-
-# Include backend and frontend modules
-module "backend" {
-  source = "./backend"
   
-  aws_region         = var.aws_region
-  environment       = var.environment
-  alb_certificate_arn = var.alb_certificate_arn
+  backend "s3" {
+    bucket = "central-tfstate-estanix-871696174477"
+    key    = "horrocruxes/production/terraform.tfstate"
+    region = "us-east-1"
+  }
 }
 
-module "frontend" {
-  source = "./frontend"
-  
-  aws_region   = var.aws_region
-  environment  = var.environment
-}
-
-# Note: In production, split into separate modules
-# This file is for reference - actual implementation uses backend.tf and frontend.tf directly
+# All resources are defined in backend.tf and frontend.tf
+# No modules needed - files are included directly

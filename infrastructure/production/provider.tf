@@ -1,31 +1,21 @@
-# ============================================
-# AWS Provider Configuration
-# ============================================
-
-provider "aws" {
-  region = var.aws_region
+terraform {
+  required_version = ">= 1.0"
   
-  default_tags {
-    tags = {
-      Project     = "horrocruxes"
-      Environment = var.environment
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
+  }
+  
+  backend "s3" {
+    # Configure backend state storage (optional)
+    bucket = "central-tfstate-estanix-871696174477"
+    key    = "horrocruxes/production/terraform.tfstate"
+    region = "us-east-1"
   }
 }
 
-# Optional: Configure AWS SSO if using AWS SSO
-# provider "aws" {
-#   region = "us-east-1"
-#   alias  = "sso"
-#   
-#   use_sso = true
-#   sso_session = "my-sso"
-#   sso_account_id = "123456789012"
-#   sso_role_name  = "Administrator"
-# }
-
-# Alias for alternate region if needed
-# provider "aws" {
-#   region = "us-west-2"
-#   alias  = "alternate"
-# }
+provider "aws" {
+  region = var.aws_region
+}

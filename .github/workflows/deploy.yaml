@@ -275,26 +275,68 @@ jobs:
   # ============================================
   post-deploy:
     name: Post Deployment Summary
-    needs: [deploy-backend, deploy-frontend]
-    if: always()
+    needs: [deploy-terraform, deploy-backend, deploy-frontend]
     runs-on: ubuntu-latest
     
     steps:
-      - name: Summary
+      - name: Check previous job results
         run: |
-          echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          # Check Terraform result
+          if [ "${{ needs.deploy-terraform.result }}" = "failure" ]; then
+            echo "❌ Terraform FAILED"
+            TF_STATUS="❌ Failed"
+            EXIT_CODE=1
+          elif [ "${{ needs.deploy-terraform.result }}" = "skipped" ]; then
+            echo "⏭️ Terraform skipped"
+            TF_STATUS="⏭️ Skipped"
+            EXIT_CODE=0
+          else
+            echo "✅ Terraform completed"
+            TF_STATUS="✅ Deployed"
+            EXIT_CODE=0
+          fi
+          
+          # Check backend result
+          if [ "${{ needs.deploy-backend.result }}" = "failure" ]; then
+            echo "❌ Backend FAILED"
+            BACKEND_STATUS="❌ Failed"
+            EXIT_CODE=1
+          elif [ "${{ needs.deploy-backend.result }}" = "skipped" ]; then
+            echo "⏭️ Backend skipped"
+            BACKEND_STATUS="⏭️ Skipped"
+          else
+            echo "✅ Backend deployed"
+            BACKEND_STATUS="✅ Deployed"
+          fi
+          
+          # Check frontend result
+          if [ "${{ needs.deploy-frontend.result }}" = "failure" ]; then
+            echo "❌ Frontend FAILED"
+            FRONTEND_STATUS="❌ Failed"
+            EXIT_CODE=1
+          elif [ "${{ needs.deploy-frontend.result }}" = "skipped" ]; then
+            echo "⏭️ Frontend skipped"
+            FRONTEND_STATUS="⏭️ Skipped"
+          else
+            echo "✅ Frontend deployed"
+            FRONTEND_STATUS="✅ Deployed"
+          fi
+          
+          # Generate summary
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Infrastructure (Terraform)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ ECS Cluster, Services, ALB" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Amplify App" >> $GITHUB_STEP_SUMMARY
+          echo "### Terraform" >> $GITHUB_STEP_SUMMARY
+          echo "- $TF_STATUS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Backend" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Deployed to ECS Fargate" >> $GITHUB_STEP_SUMMARY
+          echo "- $BACKEND_STATUS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Frontend" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ SSM updated with VITE_API_URL" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Deployed to Amplify" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Secrets" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Stored in SSM Parameter Store" >> $GITHUB_STEP_SUMMARY
+          echo "- $FRONTEND_STATUS" >> $GITHUB_STEP_SUMMARY
+          
+          # Exit with error if any failed
+          if [ "$EXIT_CODE" = "1" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Some deployments failed - check logs above" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
