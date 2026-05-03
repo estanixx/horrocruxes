@@ -261,23 +261,37 @@ jobs:
 
       - name: Update SSM with VITE_API_URL
         run: |
+          echo "Checking ALB..."
           ALB_DNS="${{ env.ALB_DNS }}"
+          echo "ALB_DNS from env: '$ALB_DNS'"
+          
           if [ -z "$ALB_DNS" ]; then
+            echo "ALB_DNS not set in env, checking AWS..."
             ALB_DNS=$(aws elbv2 describe-load-balancers \
               --names horrocruxes-backend-production \
               --query 'LoadBalancers[0].DNSName' \
               --output text 2>/dev/null || echo "")
+            echo "ALB_DNS from AWS: '$ALB_DNS'"
+          fi
+          
+          # Fallback: get from Terraform output
+          if [ -z "$ALB_DNS" ]; then
+            echo "Trying Terraform output..."
+            cd ${{ env.TERRAFORM_DIR }}
+            ALB_DNS=$(terraform output -raw backend_alb_dns_name 2>/dev/null || echo "")
+            echo "ALB_DNS from TF: '$ALB_DNS'"
           fi
           
           if [ -n "$ALB_DNS" ]; then
+            echo "✅ Found ALB: $ALB_DNS"
             aws ssm put-parameter \
               --name /horrocruxes/production/VITE_API_URL \
               --value "http://$ALB_DNS:8080" \
               --type String \
               --overwrite
-            echo "VITE_API_URL updated"
+            echo "VITE_API_URL updated to: http://$ALB_DNS:8080"
           else
-            echo "Warning: ALB DNS not found"
+            echo "❌ ALB DNS not found - backend may not be deployed"
           fi
 
       - name: Get or Create Amplify App with GitHub
@@ -343,32 +357,37 @@ jobs:
           if [ -n "${{ env.APP_ID }}" ]; then
             echo "Starting Amplify build for app: ${{ env.APP_ID }}"
             
-            # Try start-job (requires GitHub connection)
-            echo "Triggering Amplify build..."
+            # Debug: Get full app info
+            echo "=== Debug: App Info ==="
+            aws amplify get-app --app-id ${{ env.APP_ID }} --output json | jq '{repository, defaultBranch, productionBranch}'
             
+            # Check branch exists
+            echo "=== Checking prod branch ==="
+            BRANCH_INFO=$(aws amplify get-branch \
+              --app-id ${{ env.APP_ID }} \
+              --branch-name prod \
+              --output json 2>&1)
+            echo "$BRANCH_INFO" | jq -r '.branch.branchName // "not found"'
+            
+            # Try start-job with full output
+            echo "=== Triggering Amplify build ==="
+            set -x
             JOB_RESULT=$(aws amplify start-job \
               --app-id ${{ env.APP_ID }} \
               --branch-name prod \
               --job-type RELEASE \
-              --query 'jobId' \
-              --output text 2>&1)
+              2>&1)
+            set +x
+            echo "Raw result: $JOB_RESULT"
             
-            echo "Result: $JOB_RESULT"
+            # Parse job ID from JSON response
+            JOB_ID=$(echo "$JOB_RESULT" | jq -r '.jobId // empty')
             
-            if echo "$JOB_RESULT" | grep -q "^j-"; then
-              echo "✅ Started build job: $JOB_RESULT"
-              exit 0
+            if [ -n "$JOB_ID" ] && echo "$JOB_ID" | grep -q "^j-"; then
+              echo "✅ Started build job: $JOB_ID"
             else
-              echo "⚠️ start-job failed - checking if GitHub is connected..."
-              # Check app repo connection
-              REPO=$(aws amplify get-app --app-id ${{ env.APP_ID }} --query 'app.repository' --output text 2>&1 || echo "none")
-              echo "Connected repo: $REPO"
-              if [ "$REPO" = "none" ] || [ -z "$REPO" ]; then
-                echo "❌ App is not connected to GitHub. Please connect manually in Amplify console."
-                exit 1
-              fi
-              echo "⚠️ Unexpected error: $JOB_RESULT"
-              exit 1
+              echo "❌ Failed to start job"
+              echo "Full response: $JOB_RESULT"
             fi
           else
             echo "No APP_ID - skipping Amplify build"
