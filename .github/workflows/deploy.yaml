@@ -73,6 +73,7 @@ jobs:
           terraform apply -auto-approve tfplan
 
       - name: Terraform Output
+        working-directory: ${{ env.TERRAFORM_DIR }}
         if: ${{ !inputs.skip_terraform }}
         run: |
           echo "ALB_DNS=$(terraform output -raw backend_alb_dns_name)" >> $GITHUB_ENV
