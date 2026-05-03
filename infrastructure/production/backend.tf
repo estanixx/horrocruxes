@@ -321,6 +321,10 @@ resource "aws_lb_target_group" "backend" {
   protocol = "HTTP"
   vpc_id   = data.aws_vpc.default.id
   
+  lifecycle {
+    create_before_destroy = true
+  }
+  
   health_check {
     enabled             = true
     healthy_threshold   = 2
