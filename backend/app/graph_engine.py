@@ -164,13 +164,15 @@ def _format_citations(documents: List[Document]) -> List[Citation]:
         if len(snippet) > 300:
             snippet = snippet[:300] + "..."
 
-        if snippet:
-            citations.append(
-                Citation(
-                    source=clean_source,
-                    snippet=snippet,
-                )
-            )
+        if not snippet:
+                snippet = "Retrieved source without text snippet."
+
+        citations.append(
+            Citation(
+                source=clean_source,
+                snippet=snippet,
+    )
+)
 
     return citations
 
@@ -425,6 +427,13 @@ async def _search_agent(state: GraphState) -> GraphState:
                 unique_docs.append(doc)
         state.documents = unique_docs
         state.citations = _format_citations(unique_docs)
+
+        print("DOCS FOUND:", len(unique_docs))
+        print("CITATIONS FOUND:", len(state.citations))
+
+        if unique_docs:
+                print("FIRST DOC METADATA:", unique_docs[0].metadata)
+                print("FIRST DOC CONTENT:", unique_docs[0].page_content[:200])
     except asyncio.TimeoutError:
         state.errors.append("Pinecone search timed out")
     except Exception as exc:

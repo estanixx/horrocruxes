@@ -167,7 +167,7 @@ function App() {
         <Header />
 
         <div className="session-indicator">
-          <span className="session-id">Session: {sessionId.substring(0, 20)}...</span>
+          <p>Historial de busqueda: {sessionId.split("-")[1]}</p>
           <button 
             className="history-toggle-btn"
             onClick={() => setShowHistory(!showHistory)}
