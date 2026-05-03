@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, Dict, List, Literal, Optional, AsyncIterator, Tuple
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from langchain_community.document_loaders import CSVLoader, PyPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings as SentenceTransformerEmbeddings
 from langchain_pinecone import PineconeVectorStore

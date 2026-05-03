@@ -5,7 +5,7 @@ import AnswerBox from "./components/AnswerBox";
 import SourcesList from "./components/SourcesList";
 
 function normalizeApiUrl(url) {
-  if (!url) return "http://localhost:8000";
+  if (!url) return "http://localhost:8080";
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 

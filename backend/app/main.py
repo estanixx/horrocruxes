@@ -15,7 +15,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,13 +49,16 @@ async def _stream_state_events(query: str) -> AsyncGenerator[str, None]:
         for payload in update.values():
             if hasattr(payload, "route") and payload.route:
                 yield f"route:{payload.route}"
+
             if hasattr(payload, "errors") and payload.errors:
                 yield "errors:" + "; ".join(payload.errors)
+
             if hasattr(payload, "citations") and payload.citations:
                 yield "citations:" + str([
                     c.model_dump() if hasattr(c, "model_dump") else c
                     for c in payload.citations
                 ])
+
             if hasattr(payload, "answer") and payload.answer:
                 yield "answer:" + payload.answer
 
@@ -62,15 +70,17 @@ async def ws_chat(websocket: WebSocket) -> None:
         while True:
             payload = await websocket.receive_json()
             query = payload.get("query")
+
             if not query:
                 await websocket.send_text("error:missing query")
                 continue
+
             try:
                 async for event in _stream_state_events(query):
                     await websocket.send_text(event)
             except asyncio.TimeoutError:
                 await websocket.send_text("error:timeout")
-            except Exception:
-                await websocket.send_text("error:internal_error")
+            except Exception as e:
+                await websocket.send_text(f"error:internal_error:{str(e)}")
     except WebSocketDisconnect:
         return
