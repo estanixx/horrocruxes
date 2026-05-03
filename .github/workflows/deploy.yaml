@@ -280,47 +280,56 @@ jobs:
             echo "Warning: ALB DNS not found"
           fi
 
-      - name: Get or Create Amplify App
+      - name: Get or Create Amplify App with GitHub
         run: |
           if [ -z "${{ env.APP_ID }}" ]; then
-            echo "Creating new Amplify app..."
+            echo "Creating new Amplify app with GitHub connection..."
             if [ -n "${{ secrets.GH_TOKEN }}" ]; then
+              # Create app with GitHub repo and branch
               APP_ID=$(aws amplify create-app \
                 --name horrocruxes-production \
                 --repository https://github.com/${{ github.repository }} \
                 --oauth-token "${{ secrets.GH_TOKEN }}" \
+                --default-branch prod \
                 --query 'app.appId' \
                 --output text)
               echo "Created Amplify app: $APP_ID"
               echo "APP_ID=$APP_ID" >> $GITHUB_ENV
+              
+              # Wait for app to be ready
+              echo "Waiting for app to be ready..."
+              sleep 5
             else
               echo "GH_TOKEN not set - Amplify creation skipped"
             fi
+          else
+            echo "Using existing Amplify app: ${{ env.APP_ID }}"
           fi
 
       - name: Start Amplify build
         run: |
           if [ -n "${{ env.APP_ID }}" ]; then
-            echo "Starting Amplify deployment..."
+            echo "Starting Amplify build..."
             
-            # Create branch if needed
-            aws amplify get-branch \
+            # Try start-job first (works if GitHub connected)
+            JOB_ID=$(aws amplify start-job \
               --app-id ${{ env.APP_ID }} \
               --branch-name prod \
-              || aws amplify create-branch \
+              --job-type RELEASE \
+              --query 'jobId' \
+              --output text 2>/dev/null) && echo "Started build job: $JOB_ID" || \
+            (
+              # Fallback: try start-deployment
+              echo "start-job failed, trying start-deployment..."
+              JOB_ID=$(aws amplify start-deployment \
                 --app-id ${{ env.APP_ID }} \
                 --branch-name prod \
-                --stage PRODUCTION
-          
-            JOB_ID=$(aws amplify start-deployment \
-              --app-id ${{ env.APP_ID }} \
-              --branch-name prod \
-              --query 'jobId' \
-              --output text)
-          
-            echo "Started Amplify deployment: $JOB_ID"
+                --query 'jobId' \
+                --output text 2>/dev/null) && echo "Started deployment: $JOB_ID" || \
+              echo "Both failed - manual deployment needed"
+            )
           else
-            echo "No APP_ID - skipping Amplify deployment"
+            echo "No APP_ID - skipping Amplify build"
           fi
 
   # ============================================
