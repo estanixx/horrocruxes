@@ -140,7 +140,7 @@ jobs:
           fi
 
       - name: Set image tag
-        if: needs.deploy-terraform.outputs.backend-changes == 'true' || steps.image-exists.outputs.image_exists == 'false'
+        if: needs.deploy-terraform.outputs.backend_changed == 'true' || steps.image-exists.outputs.image_exists == 'false'
         run: |
           IMAGE_TAG="v${{ github.sha }}"
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
