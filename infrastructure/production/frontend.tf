@@ -46,11 +46,21 @@ applications:
 EOT
 
   # Custom rewrite rules for SPA
+  # Order matters: specific patterns first, then catch-all
+  custom_rule {
+    source = "/<*.json>"
+    status = "200"
+    target = "/index.html"
+  }
+  
   custom_rule {
     source = "/<*>"
     status = "200"
     target = "/index.html"
   }
+  
+  # Also enable SPA hosting properly
+  platform = "WEB"
   
   tags = {
     Project     = "horrocruxes"
