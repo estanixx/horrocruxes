@@ -26,8 +26,9 @@ docker-compose down
 ```
 
 The backend will be available at `http://localhost:8080`
+The frontend will be available at `http://localhost:5173`
 
-### Environment Configuration
+### Backend Environment Configuration
 
 The backend uses these environment variables (defaults shown where applicable):
 
@@ -50,6 +51,14 @@ The backend uses these environment variables (defaults shown where applicable):
 
 LangSmith tracing is only enabled when `LANGSMITH_API_KEY` is present.
 
+### Frontend Environment Configuration
+
+Only one variable is required for the frontend:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_API_URL` | `http://localhost:8080` | Backend API base URL |
+
 ### API Endpoints
 
 - `GET /` - Root endpoint
@@ -69,6 +78,19 @@ The development container uses hot-reload. Any changes to the code will automati
 ```bash
 # Rebuild after dependency changes
 docker-compose build
+```
+
+### Frontend Development
+
+The Vite dev server runs with hot reload and proxies API calls using the
+`VITE_API_URL` environment variable.
+
+```bash
+# Start both backend and frontend
+docker-compose up --build
+
+# Frontend only
+docker-compose up --build frontend
 ```
 
 ### Development Dependencies
@@ -162,6 +184,8 @@ Optional ingestion tuning:
 | `INGEST_BATCH_SIZE` | `25` | Number of documents per upsert batch |
 | `INGEST_RETRY_MAX` | `5` | Max retries when rate limited |
 | `INGEST_RETRY_BASE_SECONDS` | `5` | Base backoff seconds for retries |
+| `CHUNK_SIZE` | `1200` | Text chunk size for ingestion |
+| `CHUNK_OVERLAP` | `200` | Text chunk overlap |
 
 When using `EMBEDDING_PROVIDER=gemini`, set `GOOGLE_API_KEY` and optionally
 `GOOGLE_EMBEDDING_MODEL` for the Gemini embedding model.

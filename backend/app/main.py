@@ -1,10 +1,12 @@
 import asyncio
+import uuid
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.graph_engine import ChatRequest, ChatResponse, run_graph, stream_graph
+from app.graph_engine import ChatRequest, ChatResponse, run_graph, stream_graph, build_graph, EnvConfig
+from app import memory
 
 
 app = FastAPI(
@@ -38,10 +40,66 @@ async def health():
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
-    state = await run_graph(request.query)
-    answer = state.answer or ""
-    return ChatResponse(answer=answer, citations=state.citations)
+async def chat(
+    request: ChatRequest,
+    x_session_id: str = Header(default=None, description="Session ID for conversation history"),
+) -> ChatResponse:
+    # Use provided session_id or generate a new one
+    session_id = x_session_id or str(uuid.uuid4())
+    
+    # Get conversation context from memory
+    context = await memory.get_context_string(session_id)
+    last_entity = await memory.get_last_entity(session_id)
+    
+    # Build the enhanced query with context
+    enhanced_query = request.query
+    if context:
+        enhanced_query = f"""Previous conversation:
+{context}
+
+Current question: {request.query}"""
+    
+    # Run the graph with enhanced query
+    config = EnvConfig()
+    graph = build_graph(config)
+    from app.graph_engine import GraphState
+    state = GraphState(query=enhanced_query)
+    result = await graph.ainvoke(state)
+    
+    # Extract answer safely
+    if isinstance(result, GraphState):
+        answer = result.answer or ""
+        citations = result.citations if hasattr(result, "citations") else []
+    else:
+        answer = result.get("answer", "") if isinstance(result, dict) else ""
+        citations = result.get("citations", []) if isinstance(result, dict) else []
+    
+    # Store in conversation history
+    await memory.add_to_session(session_id, request.query, answer)
+    
+    return ChatResponse(answer=answer, citations=citations)
+
+
+@app.get("/session/{session_id}")
+async def get_session(session_id: str):
+    """Get conversation history for a session."""
+    context = await memory.get_context_string(session_id)
+    last_entity = await memory.get_last_entity(session_id)
+    return {"session_id": session_id, "context": context, "last_entity": last_entity}
+
+
+@app.delete("/session/{session_id}")
+async def clear_session(session_id: str):
+    """Clear conversation history for a session."""
+    await memory.clear_session(session_id)
+    return {"message": "Session cleared", "session_id": session_id}
+
+
+@app.post("/session/cleanup")
+async def cleanup_sessions():
+    """Manually trigger cleanup of old sessions."""
+    removed = await memory.cleanup_old_sessions()
+    return {"message": f"Removed {removed} old sessions"}
 
 
 async def _stream_state_events(query: str) -> AsyncGenerator[str, None]:
@@ -66,18 +124,24 @@ async def _stream_state_events(query: str) -> AsyncGenerator[str, None]:
 @app.websocket("/ws/chat")
 async def ws_chat(websocket: WebSocket) -> None:
     await websocket.accept()
+    session_id = None
     try:
         while True:
             payload = await websocket.receive_json()
             query = payload.get("query")
-
             if not query:
                 await websocket.send_text("error:missing query")
                 continue
-
             try:
                 async for event in _stream_state_events(query):
                     await websocket.send_text(event)
+                
+                # Store in history after successful response
+                if session_id:
+                    # Extract answer from last event (would need to track this properly)
+                    # For now, we'll just track the query
+                    await memory.add_to_session(session_id, query, "[streaming response]")
+                    
             except asyncio.TimeoutError:
                 await websocket.send_text("error:timeout")
             except Exception as e:

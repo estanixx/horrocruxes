@@ -4,8 +4,7 @@ function Header() {
       <p className="magic-subtitle">Wizarding Knowledge System</p>
       <h1>HORROCRUXES</h1>
       <p className="header-description">
-        Explora el universo de Harry Potter con ayuda de un sistema inteligente
-        de preguntas y respuestas.
+        Explore the universe of Harry Potter with the help of an intelligent question and answer system.
       </p>
     </div>
   );

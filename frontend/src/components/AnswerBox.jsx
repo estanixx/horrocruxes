@@ -3,11 +3,11 @@ import ReactMarkdown from "react-markdown";
 function AnswerBox({ answer, loading }) {
   return (
     <div className="section-card">
-      <h2>Respuesta</h2>
+      <h2>Answer</h2>
 
       {loading ? (
         <p className="loading-text">
-          Consultando el backend y verificando fuentes...
+          Consulting the backend and verifying sources...
         </p>
       ) : answer ? (
         <div className="answer-text markdown-content">
@@ -15,7 +15,7 @@ function AnswerBox({ answer, loading }) {
         </div>
       ) : (
         <p className="empty-text">
-          Aquí aparecerá la respuesta real del sistema.
+          The real answer will appear here.
         </p>
       )}
     </div>
