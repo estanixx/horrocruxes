@@ -23,7 +23,7 @@ resource "aws_amplify_app" "frontend" {
     VITE_API_URL        = data.aws_ssm_parameter.vite_api_url.value
   }
   
-  # Build spec for frontend
+# Build spec for frontend
   build_spec = <<-EOT
 version: 1
 applications:
@@ -40,23 +40,17 @@ applications:
         baseDirectory: dist
         files:
           - '**/*'
+      cache:
+        paths:
+          - frontend/node_modules/**/*
 EOT
 
-# Custom rewrite rules for SPA
+  # Custom rewrite rules for SPA
   custom_rule {
     source = "/<*>"
     status = "200"
     target = "/index.html"
   }
-  
-  # Custom headers - allow mixed content (HTTP from HTTPS)
-  custom_headers = <<-EOT
-customHeaders:
-  - pattern: '**'
-    headers:
-      - key: 'Content-Security-Policy'
-        value: "default-src * 'unsafe-inline' 'unsafe-eval'; connect-src *; upgrade-insecure-requests"
-EOT
   
   tags = {
     Project     = "horrocruxes"
