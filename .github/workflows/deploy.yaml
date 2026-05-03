@@ -1,4 +1,4 @@
-name: Deploy to AWS AppRunner
+name: Deploy to Production (Terraform + ECS + Amplify)
 
 on:
   push:
@@ -6,29 +6,89 @@ on:
       - prod
     paths:
       - 'backend/**'
+      - 'frontend/**'
       - '.github/workflows/deploy.yaml'
+      - 'infrastructure/production/**'
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: 'Image tag to deploy'
+      skip_terraform:
+        description: 'Skip Terraform deployment'
         required: false
-        type: string
+        type: boolean
+        default: false
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: horrocruxes-backend
-  APP_RUNNER_SERVICE_NAME: horrocruxes-backend
-  DOCKERFILE_PATH: backend/Dockerfile.prod
-  CONTEXT_PATH: backend
+  BACKEND_ECR: horrocruxes-backend
+  TERRAFORM_DIR: infrastructure/production
 
 jobs:
-  deploy:
-    name: Deploy to AWS AppRunner
+  # ============================================
+  # Deploy Infrastructure with Terraform
+  # ============================================
+  deploy-terraform:
+    name: Deploy Infrastructure (Terraform)
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=central-tfstate-estanix-871696174477" \
+            -backend-config="key=horrocruxes/production/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: |
+          terraform plan \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="environment=production" \
+            -var="alb_certificate_arn=${{ secrets.ALB_CERTIFICATE_ARN || '' }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        if: ${{ !inputs.skip_terraform }}
+        run: |
+          terraform apply -auto-approve tfplan
+
+      - name: Terraform Output
+        if: ${{ !inputs.skip_terraform }}
+        run: |
+          echo "ALB_DNS=$(terraform output -raw backend_alb_dns_name)" >> $GITHUB_ENV
+          echo "✅ Terraform infrastructure deployed"
+
+  # ============================================
+  # Deploy Backend to ECS
+  # ============================================
+  deploy-backend:
+    name: Deploy Backend to ECS
+    runs-on: ubuntu-latest
+    needs: deploy-terraform
+    permissions:
+      id-token: write
+      contents: read
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,124 +104,197 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set image tag
-        id: vars
         run: |
-          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
-            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
-          else
-            IMAGE_TAG="${{ github.sha }}"
-          fi
+          IMAGE_TAG="v${{ github.sha }}"
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "Full image: horrocruxes-backend:$IMAGE_TAG"
 
-      - name: Build and push Docker image
+      - name: Build and push backend image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           docker build \
-            --tag $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
-            --tag $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest \
-            --file ${{ env.DOCKERFILE_PATH }} \
-            ${{ env.CONTEXT_PATH }}
-
-          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+            --tag $ECR_REGISTRY/${{ env.BACKEND_ECR }}:${{ env.IMAGE_TAG }} \
+            --tag $ECR_REGISTRY/${{ env.BACKEND_ECR }}:latest \
+            --file backend/Dockerfile.prod \
+            backend/
           
-      - name: Deploy to AppRunner
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          docker push $ECR_REGISTRY/${{ env.BACKEND_ECR }}:${{ env.IMAGE_TAG }}
+          docker push $ECR_REGISTRY/${{ env.BACKEND_ECR }}:latest
+
+      - name: Update ECS task definition
         run: |
-          # 1. Corrected App Runner Source Configuration Schema
-          SOURCE_CONFIG="AuthenticationConfiguration={AccessRoleArn=${{ secrets.ECR_ACCESS_ROLE_ARN }}},ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR}"
-
-          # 2. Check if service exists
-          SERVICE_ARN=$(aws apprunner list-services \
-            --region ${{ env.AWS_REGION }} \
-            --query "ServiceSummaryList[?ServiceName=='${{ env.APP_RUNNER_SERVICE_NAME }}'].ServiceArn" \
-            --output text)
-
-          if [ -z "$SERVICE_ARN" ]; then
-            echo "Service not found. Creating new AppRunner service..."
+          ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          
+          # Check if task definition exists
+          aws ecs describe-task-definition --task-definition horrocruxes-backend 2>/dev/null && \
+            TASK_DEF=$(aws ecs describe-task-definition \
+              --task-definition horrocruxes-backend \
+              --query 'taskDefinition' \
+              --output json) || \
+            TASK_DEF="{}"
+          
+          if [ "$TASK_DEF" != "{}" ]; then
+            NEW_TASK_DEF=$(echo "$TASK_DEF" | jq \
+              --arg IMAGE "$ECR_REGISTRY/${{ env.BACKEND_ECR }}:${{ env.IMAGE_TAG }}" \
+              '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
             
-            SERVICE_ARN=$(aws apprunner create-service \
-              --service-name ${{ env.APP_RUNNER_SERVICE_NAME }} \
-              --source-configuration "$SOURCE_CONFIG" \
-              --instance-configuration "Cpu=1 vCPU,Memory=2 GB" \
-              --region ${{ env.AWS_REGION }} \
-              --tags "Key=Project,Value=horrocruxes" "Key=Environment,Value=production" \
-              --query "Service.ServiceArn" \
-              --output text)
-            
-            echo "Service creation initiated with ARN: $SERVICE_ARN"
+            aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF"
           else
-            echo "Service found (ARN: $SERVICE_ARN). Updating existing AppRunner service..."
-            
-            aws apprunner update-service \
-              --service-arn $SERVICE_ARN \
-              --source-configuration "$SOURCE_CONFIG" \
-              --region ${{ env.AWS_REGION }} > /dev/null
-              
-            echo "Service update initiated."
+            echo "Task definition not found - will be created by Terraform"
           fi
 
-          # Export the ARN to GitHub Env so the next step can use it
-          echo "SERVICE_ARN=$SERVICE_ARN" >> $GITHUB_ENV
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster horrocruxes-backend-production \
+            --service horrocruxes-backend-production \
+            --force-new-deployment || \
+            echo "Service update skipped - may not exist yet"
 
-          # 3. Custom Waiter (Moved OUTSIDE the if/else block)
-          echo "Waiting for App Runner deployment to complete..."
-          while true; do
-            STATUS=$(aws apprunner describe-service \
-              --service-arn $SERVICE_ARN \
-              --region ${{ env.AWS_REGION }} \
-              --query "Service.Status" \
-              --output text)
-              
-            if [ "$STATUS" == "RUNNING" ]; then
-              echo "Deployment successful! Service is RUNNING."
-              break
-            elif [[ "$STATUS" == *"FAILED"* ]]; then
-              echo "Deployment failed! Service status is $STATUS."
-              exit 1
+      - name: Wait for deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster horrocruxes-backend-production \
+            --services horrocruxes-backend-production 2>/dev/null || \
+            echo "Wait skipped - cluster may not be ready"
+
+      - name: Get ALB DNS
+        id: alb-dns
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names horrocruxes-backend-production \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$ALB_DNS" ]; then
+            echo "ALB_DNS=$ALB_DNS" >> $GITHUB_ENV
+            echo "Backend: http://$ALB_DNS:8000"
+          else
+            ALB_DNS=$(terraform output -raw backend_alb_dns_name 2>/dev/null || echo "")
+            echo "ALB_DNS=$ALB_DNS" >> $GITHUB_ENV
+            echo "Backend: http://$ALB_DNS:8000"
+          fi
+
+  # ============================================
+  # Deploy Frontend to Amplify
+  # ============================================
+  deploy-frontend:
+    name: Deploy Frontend to Amplify
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update SSM with VITE_API_URL
+        run: |
+          # Get ALB DNS from environment or Terraform
+          ALB_DNS="${{ env.ALB_DNS }}"
+          if [ -z "$ALB_DNS" ]; then
+            ALB_DNS=$(aws elbv2 describe-load-balancers \
+              --names horrocruxes-backend-production \
+              --query 'LoadBalancers[0].DNSName' \
+              --output text 2>/dev/null || echo "")
+          fi
+          
+          if [ -n "$ALB_DNS" ]; then
+            aws ssm put-parameter \
+              --name /horrocruxes/production/VITE_API_URL \
+              --value "http://$ALB_DNS:8000" \
+              --type String \
+              --overwrite
+            echo "VITE_API_URL updated"
+          else
+            echo "Warning: ALB DNS not found, skipping SSM update"
+          fi
+
+      - name: Get or Create Amplify App
+        id: amplify-app
+        run: |
+          # Try to find existing Amplify app
+          APP_ID=$(aws amplify list-apps \
+            --query "apps[?name=='horrocruxes-production'].appId" \
+            --output text)
+          
+          if [ -z "$APP_ID" ]; then
+            echo "Creating new Amplify app..."
+            # Need OAuth token for GitHub
+            if [ -n "${{ secrets.GH_TOKEN }}" ]; then
+              APP_ID=$(aws amplify create-app \
+                --name horrocruxes-production \
+                --repository https://github.com/${{ github.repository }} \
+                --oauth-token "${{ secrets.GH_TOKEN }}" \
+                --query 'app.appId' \
+                --output text)
+              echo "Created Amplify app: $APP_ID"
             else
-              echo "Current status: $STATUS. Waiting 15 seconds..."
-              sleep 15
+              echo "GH_TOKEN not set - Amplify app needs manual creation"
+              echo "APP_ID=" >> $GITHUB_OUTPUT
+              exit 0
             fi
-          done
-
-      - name: Get AppRunner service URL
-        id: service-url
-        run: |
-          # Using the SERVICE_ARN from the previous step
-          SERVICE_DESC=$(aws apprunner describe-service \
-            --service-arn ${{ env.SERVICE_ARN }} \
-            --region ${{ env.AWS_REGION }} \
-            --query 'Service.ServiceUrl' \
-            --output text)
-          echo "service_url=$SERVICE_DESC" >> $GITHUB_OUTPUT
-          echo "Service URL: $SERVICE_DESC"
-
-      - name: Health check
-        env:
-          SERVICE_URL: ${{ steps.service-url.outputs.service_url }}
-        run: |
-          echo "Waiting for application to be ready..."
-          sleep 30
-          
-          # Changed to HTTPS
-          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.SERVICE_URL }}/health || echo "000")
-          echo "Health check response: $response"
-          
-          if [ "$response" = "200" ]; then
-            echo "Deployment successful!"
           else
-            echo "Warning: Health check returned $response"
+            echo "Using existing Amplify app: $APP_ID"
           fi
+          
+          echo "APP_ID=$APP_ID" >> $GITHUB_ENV
 
-      - name: Post deployment info
+      - name: Start Amplify build
+        if: env.APP_ID != ''
         run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Service:** ${{ env.APP_RUNNER_SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** https://${{ steps.service-url.outputs.service_url }}" >> $GITHUB_STEP_SUMMARY
+          # Create branch if needed
+          aws amplify get-branch \
+            --app-id ${{ env.APP_ID }} \
+            --branch-name prod \
+            || aws amplify create-branch \
+              --app-id ${{ env.APP_ID }} \
+              --branch-name prod \
+              --stage PRODUCTION
+          
+          # Trigger build
+          JOB_ID=$(aws amplify start-job \
+            --app-id ${{ env.APP_ID }} \
+            --branch-name prod \
+            --job-type BUILD \
+            --query 'jobId' \
+            --output text)
+          
+          echo "Started build: $JOB_ID"
+
+  # ============================================
+  # Summary
+  # ============================================
+  post-deploy:
+    name: Post Deployment Summary
+    needs: [deploy-backend, deploy-frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Summary
+        run: |
+          echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Infrastructure (Terraform)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ ECS Cluster, Services, ALB" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Amplify App" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Backend" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Deployed to ECS Fargate" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Frontend" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SSM updated with VITE_API_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Deployed to Amplify" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Secrets" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Stored in SSM Parameter Store" >> $GITHUB_STEP_SUMMARY

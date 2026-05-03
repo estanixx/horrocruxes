@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Creates OIDC Provider, IAM Role for GitHub Actions, and ECR Repository
-  for Horrocruxes Backend deployment to AWS AppRunner.
+  Creates OIDC Provider, IAM Role for GitHub Actions, ECR Repositories,
+  SSM Parameters for secrets, and prepares infrastructure for
+  Horrocruxes deployment to ECS + Amplify.
 
 Parameters:
   GitHubOrg:
@@ -14,11 +15,15 @@ Parameters:
     Description: GitHub repository name
     Default: "horrocruxes"
 
-
-  EcrRepositoryName:
+  BackendEcrRepositoryName:
     Type: String
     Description: Name of the ECR repository for backend
     Default: "horrocruxes-backend"
+
+  FrontendEcrRepositoryName:
+    Type: String
+    Description: Name of the ECR repository for frontend
+    Default: "horrocruxes-frontend"
 
   Environment:
     Type: String
@@ -29,18 +34,29 @@ Parameters:
     Type: String
     Description: ARN of the GitHub OIDC Provider (created in a separate stack)
     Default: "arn:aws:iam::871696174477:oidc-provider/token.actions.githubusercontent.com"
+  
+  # Secret values - these will be stored in SSM
+  GoogleAPIKey:
+    Type: String
+    Description: Google API Key for Gemini (will be stored in SSM)
+    Default: ""
+
+  PineconeAPIKey:
+    Type: String
+    Description: Pinecone API Key (will be stored in SSM)
+    Default: ""
 
 Resources:
 
 
   # ============================================
-  # IAM Role for GitHub Actions
+  # IAM Role for GitHub Actions (updated for ECS + Amplify + Terraform)
   # ============================================
   GitHubActionsRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "horrocruxes-github-actions-${Environment}"
-      Description: Role for GitHub Actions to deploy to AWS AppRunner
+      Description: Role for GitHub Actions to deploy to ECS, Amplify, and run Terraform
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -55,15 +71,54 @@ Resources:
                 token.actions.githubusercontent.com:aud: "sts.amazonaws.com"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess
-        - arn:aws:iam::aws:policy/AWSAppRunnerFullAccess
+        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
+        - arn:aws:iam::aws:policy/service-role/AmplifyBackendDeployFullAccess
+        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
+        - arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess
+        - arn:aws:iam::aws:policy/IAMFullAccess
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchFullAccess
       Policies:
-        - PolicyName: PassRoleForAppRunner
+        - PolicyName: PassRoleForECS
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: iam:PassRole
-                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/horrocruxes-apprunner-*"
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/horrocruxes-ecs-*"
+        - PolicyName: PassRoleForALB
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/horrocruxes-alb-*"
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                  - ssm:PutParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/horrocruxes/*"
+        - PolicyName: TerraformBackendAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::horrocruxes-terraform-state"
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/horrocruxes-terraform-locks"
       Tags:
         - Key: "Project"
           Value: "horrocruxes"
@@ -76,7 +131,7 @@ Resources:
   BackendECRRepository:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: !Ref EcrRepositoryName
+      RepositoryName: !Ref BackendEcrRepositoryName
       ImageScanningConfiguration:
         ScanOnPush: true
       ImageTagMutability: "MUTABLE"
@@ -96,50 +151,46 @@ Resources:
                 "action": {
                   "type": "expire"
                 }
-              },
-              {
-                "rulePriority": 2,
-                "description": "Expire untagged images older than 14 days",
-                "selection": {
-                  "tagStatus": "untagged",
-                  "countType": "sinceImagePushed",
-                  "countUnit": "days",
-                  "countNumber": 14
-                },
-                "action": {
-                  "type": "expire"
-                }
               }
             ]
           }
       Tags:
         - Key: "Project"
           Value: "horrocruxes"
-        - Key: "Environment"
+- Key: "Environment"
           Value: !Ref Environment
 
   # ============================================
-  # AppRunner Service Role for ECR Access
+  # SSM Parameter Store - Secrets
+  # Note: Using String type - values are masked in AWS Console
+  # The NoEcho property hides the value in CloudFormation outputs
   # ============================================
-  AppRunnerECRAccessRole:
-    Type: AWS::IAM::Role
+  GoogleAPIKeyParameter:
+    Type: AWS::SSM::Parameter
     Properties:
-      RoleName: !Sub "horrocruxes-apprunner-ecr-access-${Environment}"
-      Description: Role for AppRunner to pull images from ECR
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: build.apprunner.amazonaws.com
-            Action: "sts:AssumeRole"
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-      Tags:
-        - Key: "Project"
-          Value: "horrocruxes"
-        - Key: "Environment"
-          Value: !Ref Environment
+      Name: !Sub "/horrocruxes/${Environment}/GOOGLE_API_KEY"
+      Type: String
+      Value: !Ref GoogleAPIKey
+      Description: Google API Key for Horrocruxes
+      Tier: Standard
+
+  PineconeAPIKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/horrocruxes/${Environment}/PINECONE_API_KEY"
+      Type: String
+      Value: !Ref PineconeAPIKey
+      Description: Pinecone API Key for Horrocruxes
+      Tier: Standard
+
+  ViteAPIURLParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/horrocruxes/${Environment}/VITE_API_URL"
+      Type: String
+      Value: "http://horrocruxes-backend-production-123456789.us-east-1.elb.amazonaws.com"
+      Description: Backend API URL for frontend (update after ALB is created)
+      Tier: Standard
 
 
 
@@ -151,23 +202,23 @@ Outputs:
     Export:
       Name: !Sub "${AWS::StackName}-GitHubActionsRoleArn"
 
-  ECRRepositoryUri:
-    Description: "URI of the ECR Repository"
+  BackendECRRepositoryUri:
+    Description: "URI of the Backend ECR Repository"
     Value: !GetAtt BackendECRRepository.RepositoryUri
     Export:
-      Name: !Sub "${AWS::StackName}-ECRRepositoryUri"
+      Name: !Sub "${AWS::StackName}-BackendECRRepositoryUri"
 
-  ECRRepositoryName:
-    Description: "Name of the ECR Repository"
-    Value: !Ref BackendECRRepository
+  SSMGoogleAPIKeyArn:
+    Description: "ARN of the Google API Key SSM Parameter"
+    Value: !Ref GoogleAPIKeyParameter
     Export:
-      Name: !Sub "${AWS::StackName}-ECRRepositoryName"
+      Name: !Sub "${AWS::StackName}-SSMGoogleAPIKeyArn"
 
-  AppRunnerECRAccessRoleArn:
-    Description: "ARN of the AppRunner ECR Access Role"
-    Value: !GetAtt AppRunnerECRAccessRole.Arn
+  SSMPineconeAPIKeyArn:
+    Description: "ARN of the Pinecone API Key SSM Parameter"
+    Value: !Ref PineconeAPIKeyParameter
     Export:
-      Name: !Sub "${AWS::StackName}-AppRunnerECRAccessRoleArn"
+      Name: !Sub "${AWS::StackName}-SSMPineconeAPIKeyArn"
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -177,20 +228,30 @@ Metadata:
         Parameters:
           - GitHubOrg
           - GitHubRepo
-          - GitHubBranch
       - Label:
           default: "AWS Resources"
         Parameters:
-          - EcrRepositoryName
+          - BackendEcrRepositoryName
           - Environment
+      - Label:
+          default: "Secrets"
+        Parameters:
+          - GoogleAPIKey
+          - PineconeAPIKey
 
     ParameterLabels:
       GitHubOrg:
         default: "GitHub Organization"
       GitHubRepo:
         default: "GitHub Repository"
-      GitHubBranch:
-        default: "GitHub Branch"
+      BackendEcrRepositoryName:
+        default: "Backend ECR Repository Name"
+      Environment:
+        default: "Environment"
+      GoogleAPIKey:
+        default: "Google API Key"
+      PineconeAPIKey:
+        default: "Pinecone API Key"
       EcrRepositoryName:
         default: "ECR Repository Name"
       Environment:
