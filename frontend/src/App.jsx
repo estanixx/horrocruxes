@@ -4,6 +4,8 @@ import QuestionBox from "./components/QuestionBox";
 import AnswerBox from "./components/AnswerBox";
 import SourcesList from "./components/SourcesList";
 import HistoryPanel from "./components/HistoryPanel";
+import TimelinePanel from "./components/TimelinePanel";
+import ReportPanel from "./components/ReportPanel";
 
 function normalizeApiUrl(url) {
   if (!url) return "http://localhost:8000";
@@ -29,6 +31,8 @@ function App() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [sources, setSources] = useState([]);
+  const [timeline, setTimeline] = useState([]);
+  const [reportMarkdown, setReportMarkdown] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [conversationHistory, setConversationHistory] = useState([]);
@@ -75,6 +79,8 @@ function App() {
     setError("");
     setAnswer("");
     setSources([]);
+    setTimeline([]);
+    setReportMarkdown("");
 
     try {
       const controller = new AbortController();
@@ -122,6 +128,8 @@ function App() {
       setConversationHistory(prev => [...prev, { question: trimmedQuestion, answer: answerText }]);
 
       setSources(Array.isArray(data?.citations) ? data.citations : []);
+      setTimeline(Array.isArray(data?.timeline) ? data.timeline : []);
+      setReportMarkdown(data?.report_markdown || "");
     } catch (err) {
       if (err.name === "AbortError") {
         setError("La solicitud tardó demasiado. Intenta de nuevo.");
@@ -133,6 +141,8 @@ function App() {
 
       setAnswer("");
       setSources([]);
+      setTimeline([]);
+      setReportMarkdown("");
       console.error("Error conectando con backend:", err);
     } finally {
       setLoading(false);
@@ -143,6 +153,8 @@ function App() {
     setQuestion("");
     setAnswer("");
     setSources([]);
+    setTimeline([]);
+    setReportMarkdown("");
     setError("");
     setLoading(false);
     setConversationHistory([]);
@@ -195,6 +207,8 @@ function App() {
         {error ? <div className="error-banner">{error}</div> : null}
 
         <AnswerBox answer={answer} loading={loading} />
+        <TimelinePanel events={timeline} />
+        <ReportPanel report={reportMarkdown} />
         <SourcesList sources={sources} />
       </div>
     </div>

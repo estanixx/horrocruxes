@@ -70,14 +70,29 @@ Current question: {request.query}"""
     if isinstance(result, GraphState):
         answer = result.answer or ""
         citations = result.citations if hasattr(result, "citations") else []
+        agent_trace = result.agent_trace if hasattr(result, "agent_trace") else []
+        timeline = result.timeline if hasattr(result, "timeline") else []
+        report_markdown = result.report_markdown if hasattr(result, "report_markdown") else None
+        confidence = result.confidence if hasattr(result, "confidence") else None
     else:
         answer = result.get("answer", "") if isinstance(result, dict) else ""
         citations = result.get("citations", []) if isinstance(result, dict) else []
+        agent_trace = result.get("agent_trace", []) if isinstance(result, dict) else []
+        timeline = result.get("timeline", []) if isinstance(result, dict) else []
+        report_markdown = result.get("report_markdown") if isinstance(result, dict) else None
+        confidence = result.get("confidence") if isinstance(result, dict) else None
     
     # Store in conversation history
     await memory.add_to_session(session_id, request.query, answer)
     
-    return ChatResponse(answer=answer, citations=citations)
+    return ChatResponse(
+        answer=answer,
+        citations=citations,
+        agent_trace=agent_trace,
+        timeline=timeline,
+        report_markdown=report_markdown,
+        confidence=confidence,
+    )
 
 
 @app.get("/session/{session_id}")
