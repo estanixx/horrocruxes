@@ -8,7 +8,7 @@ import TimelinePanel from "./components/TimelinePanel";
 import ReportPanel from "./components/ReportPanel";
 
 function normalizeApiUrl(url) {
-  if (!url) return "http://localhost:8000";
+  if (!url) return "http://localhost:8080";
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 
@@ -179,7 +179,7 @@ function App() {
         <Header />
 
         <div className="session-indicator">
-          <p>Historial de busqueda: {sessionId.split("-")[1]}</p>
+          <p>Search History: {sessionId.split("-")[1]}</p>
           <button 
             className="history-toggle-btn"
             onClick={() => setShowHistory(!showHistory)}

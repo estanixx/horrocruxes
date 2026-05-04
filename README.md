@@ -1,198 +1,352 @@
-# Horrocruxes
+# HORROCRUXES
 
-Backend API project with FastAPI, deployed to AWS AppRunner.
+HORROCRUXES es un sistema de preguntas y respuestas sobre el universo de Harry Potter. Usa recuperacion semantica sobre los 7 libros en PDF, datos estructurados en CSV, memoria conversacional y respuestas con fuentes auditables.
 
-## Local Development
+El proyecto esta dividido en:
 
-### Prerequisites
+- `backend/`: API FastAPI con pipeline RAG/multiagente usando LangGraph, Pinecone, Gemini, S3 y CSVs.
+- `Frontend/`: cliente web React + Vite.
+- `docker-compose.yaml`: ejecucion local de backend y frontend.
+- `infrastructure/`: plantilla CloudFormation para despliegue en AWS.
 
-- Docker
-- Docker Compose
+## Funcionalidades
 
-### Quick Start
+- Chat web para hacer preguntas en lenguaje natural.
+- Busqueda en los 7 libros PDF indexados en Pinecone.
+- Uso de CSVs como fuente estructurada desde S3.
+- Citas separadas en el panel `Sources`.
+- Memoria conversacional por sesion.
+- Timeline automatica para preguntas cronologicas.
+- Reporte Markdown auditable por respuesta.
+- Fallback cuando el LLM falla por cuota o disponibilidad.
+
+## Requisitos
+
+Para ejecutar con Docker:
+
+- Git
+- Docker Desktop
+- Docker Compose, disponible como `docker compose` o `docker-compose`
+
+Para ejecutar sin Docker:
+
+- Python 3.11 o superior
+- Node.js 20 o superior
+- npm
+
+Tambien necesitas credenciales/API keys para usar el sistema completo:
+
+- Google Gemini API key
+- Pinecone API key
+- Acceso a S3 si vas a consultar CSVs o reindexar datos
+
+## 1. Clonar El Proyecto
 
 ```bash
-# Start all services locally
+git clone <URL_DEL_REPOSITORIO>
+cd horrocruxes
+```
+
+Si ya tienes el proyecto descargado, solo entra a la carpeta raiz:
+
+```bash
+cd horrocruxes
+```
+
+## 2. Configurar Variables De Entorno
+
+### Backend
+
+Crea el archivo `backend/.env`.
+
+Ejemplo:
+
+```env
+GOOGLE_API_KEY=tu_google_api_key
+PINECONE_API_KEY=tu_pinecone_api_key
+PINECONE_INDEX=horrocruxes-index
+
+GOOGLE_LLM_MODEL=gemini-2.5-flash-lite
+GOOGLE_FALLBACK_LLM_MODELS=gemini-2.0-flash-lite,gemini-2.0-flash
+
+EMBEDDING_PROVIDER=sentence-transformers
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_DEVICE=cpu
+
+AWS_REGION=us-east-1
+S3_BUCKET=horrocruxes-data
+S3_PDF_PREFIX=data/books
+S3_CSV_PREFIX=data/structured
+S3_REPORTS_PREFIX=reports
+
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=horrocruxes
+```
+
+Notas:
+
+- `GOOGLE_API_KEY` se usa para generar respuestas con Gemini.
+- `PINECONE_API_KEY` y `PINECONE_INDEX` se usan para buscar en los libros.
+- `LANGSMITH_API_KEY` es opcional.
+- No subas archivos `.env` al repositorio.
+
+### Frontend
+
+Crea el archivo `Frontend/.env`.
+
+Ejemplo:
+
+```env
+VITE_API_URL=http://localhost:8080
+```
+
+## 3. Ejecutar Con Docker
+
+Desde la raiz del proyecto:
+
+```bash
+docker compose up --build
+```
+
+Si tu instalacion usa el comando antiguo:
+
+```bash
 docker-compose up --build
-
-# Run in detached mode
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
 ```
 
-The backend will be available at `http://localhost:8080`
-The frontend will be available at `http://localhost:5173`
+Cuando termine de levantar:
 
-### Backend Environment Configuration
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8080`
+- Health check: `http://localhost:8080/health`
 
-The backend uses these environment variables (defaults shown where applicable):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GOOGLE_API_KEY` | — | Google GenAI API key for LLM (required when using Gemini embeddings) |
-| `PINECONE_API_KEY` | — | Pinecone API key |
-| `PINECONE_INDEX` | `horrocruxes-index` | Pinecone index name |
-| `PINECONE_ENV` | — | Pinecone environment (kept for compatibility) |
-| `LANGSMITH_API_KEY` | — | Enable LangSmith tracing when set |
-| `LANGSMITH_PROJECT` | `horrocruxes` | LangSmith project name |
-| `GOOGLE_LLM_MODEL` | `models/gemini-1.5-pro` | Gemini chat model for answers |
-| `AWS_REGION` | `us-east-1` | AWS region for S3 |
-| `S3_BUCKET` | `horrocruxes-data` | S3 bucket with PDFs/CSVs |
-| `S3_PDF_PREFIX` | `data/books` | S3 prefix for PDF docs |
-| `S3_CSV_PREFIX` | `data/structured` | S3 prefix for CSV data |
-| `S3_REPORTS_PREFIX` | `reports` | S3 prefix for saved reports |
-| `EMBEDDING_PROVIDER` | `sentence-transformers` | Embedding provider: `sentence-transformers` or `gemini` |
-| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model for the selected provider |
-
-LangSmith tracing is only enabled when `LANGSMITH_API_KEY` is present.
-
-### Frontend Environment Configuration
-
-Only one variable is required for the frontend:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VITE_API_URL` | `http://localhost:8080` | Backend API base URL |
-
-### API Endpoints
-
-- `GET /` - Root endpoint
-- `GET /health` - Health check
-- `POST /chat` - Returns `ChatResponse` with citations list
-- `WS /ws/chat` - Streams agent state updates
-
-### Pinecone SDK Note
-
-This project uses the **new** Pinecone SDK package name: `pinecone`.
-The deprecated `pinecone-client` package is not supported here.
-
-### Development
-
-The development container uses hot-reload. Any changes to the code will automatically reload the application.
+Para detener los servicios:
 
 ```bash
-# Rebuild after dependency changes
-docker-compose build
+docker compose down
 ```
 
-### Frontend Development
-
-The Vite dev server runs with hot reload and proxies API calls using the
-`VITE_API_URL` environment variable.
+Para ejecutar en segundo plano:
 
 ```bash
-# Start both backend and frontend
-docker-compose up --build
-
-# Frontend only
-docker-compose up --build frontend
+docker compose up -d --build
 ```
 
-### Development Dependencies
-
-Production dependencies live in `backend/requirements.txt`.
-Heavy, local-only dependencies (embeddings ingestion) live in `backend/dev-requirements.txt`.
+Para ver logs:
 
 ```bash
-pip install -r backend/requirements.txt
-pip install -r backend/dev-requirements.txt
+docker compose logs -f
 ```
 
-## Infrastructure
-
-### AWS CloudFormation
-
-The `infrastructure/setup.yaml` template creates:
-
-- OIDC Provider for GitHub Actions
-- IAM Role with OIDC trust policy
-- ECR Repository for backend images
-- Optional VPC Connector for AppRunner
+Para reconstruir despues de cambios en dependencias:
 
 ```bash
-# Deploy infrastructure
-aws cloudformation deploy \
-  --template-file infrastructure/setup.yaml \
-  --stack-name horrocruxes-infra \
-  --parameter-overrides \
-    GitHubOrg=your-org \
-    GitHubRepo=horrocruxes \
-    GitHubBranch=prod \
-    EcrRepositoryName=horrocruxes-backend \
-    Environment=production
+docker compose build
 ```
 
-### GitHub Actions
+## 4. Ejecutar Sin Docker
 
-Push to the `prod` branch triggers:
-1. Docker image build
-2. Push to ECR
-3. Deploy to AWS AppRunner
+### Backend
 
-## One-time Pinecone Ingestion
-
-Index PDFs and CSVs from S3 into Pinecone once (or when data changes):
+Desde la raiz:
 
 ```bash
 cd backend
-export PINECONE_API_KEY=...
-export PINECONE_INDEX=horrocruxes-index
-export AWS_REGION=us-east-1
-export S3_BUCKET=horrocruxes-data
-export S3_PDF_PREFIX=data/books
-export S3_CSV_PREFIX=data/structured
-export EMBEDDING_PROVIDER=sentence-transformers
-export EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-
-python scripts/ingest_pinecone.py
+python -m venv .venv
 ```
 
-## Kaggle Dataset (7 CSVs) → S3 (one-time)
+Activar entorno virtual en Windows PowerShell:
 
-Download the Kaggle dataset locally, then upload to S3 for ingestion:
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Activar entorno virtual en macOS/Linux:
 
 ```bash
-cd backend
+source .venv/bin/activate
+```
+
+Instalar dependencias:
+
+```bash
+pip install -r requirements.txt
 pip install -r dev-requirements.txt
+```
 
-# Download dataset (requires Kaggle credentials)
-export KAGGLE_DATASET=gulsahdemiryurek/harry-potter-dataset
-export KAGGLE_DOWNLOAD_DIR=./data/kaggle
-python scripts/kaggle_download.py
+Ejecutar API:
 
-# Upload to S3 under S3_CSV_PREFIX
-export S3_BUCKET=horrocruxes-data
-export S3_CSV_PREFIX=data/structured
-python scripts/kaggle_upload_s3.py
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+```
 
-# Re-run ingestion to include CSVs
+### Frontend
+
+En otra terminal, desde la raiz:
+
+```bash
+cd Frontend
+npm install
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+Abrir:
+
+```text
+http://localhost:5173
+```
+
+## 5. Probar Que Todo Funciona
+
+Backend:
+
+```bash
+curl http://localhost:8080/health
+```
+
+Respuesta esperada:
+
+```json
+{"status":"healthy"}
+```
+
+Chat por API:
+
+```bash
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"quien es Harry Potter?\"}"
+```
+
+En PowerShell:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/chat" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"query":"quien es Harry Potter?"}'
+```
+
+Preguntas recomendadas para demo:
+
+- `quien es Harry Potter?`
+- `Haz una linea de tiempo de Voldemort`
+- `Cuales son los Horrocruxes de Voldemort?`
+- `Compara la evolucion de Snape y Draco Malfoy`
+- `Que hechizos usa Hermione?`
+
+## 6. Endpoints Principales
+
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| `GET` | `/` | Estado basico de la API |
+| `GET` | `/health` | Health check |
+| `POST` | `/chat` | Pregunta al sistema y devuelve respuesta, citas, timeline y reporte |
+| `GET` | `/session/{session_id}` | Consulta historial de una sesion |
+| `DELETE` | `/session/{session_id}` | Limpia historial de una sesion |
+| `POST` | `/session/cleanup` | Limpia sesiones antiguas |
+| `WS` | `/ws/chat` | WebSocket para streaming de eventos |
+
+## 7. Como Funciona El Pipeline
+
+1. El usuario hace una pregunta desde el frontend.
+2. El backend crea o recupera una sesion de conversacion.
+3. El coordinador decide si la pregunta va a busqueda textual o datos estructurados.
+4. El recuperador consulta Pinecone para traer fragmentos relevantes de los libros.
+5. Si aplica, el agente estructurado carga CSVs desde S3.
+6. El verificador/redactor genera la respuesta con Gemini o usa fallback extractivo.
+7. El agente de reporte genera timeline, confianza y reporte Markdown.
+8. El frontend muestra la respuesta y las fuentes en secciones separadas.
+
+## 8. Datos E Ingestion
+
+Los PDFs y CSVs viven en S3. Pinecone debe tener el indice creado y cargado previamente.
+
+Para reindexar desde S3:
+
+```bash
+cd backend
 python scripts/ingest_pinecone.py
 ```
 
-Optional ingestion tuning:
+Variables importantes para ingestion:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `EMBEDDING_PROVIDER` | `sentence-transformers` | Embedding provider (`sentence-transformers` or `gemini`) |
-| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Override embedding model |
-| `EMBEDDING_DEVICE` | `cpu` | Embedding device (`cpu` or `cuda`) - default is CPU |
-| `INGEST_BATCH_SIZE` | `25` | Number of documents per upsert batch |
-| `INGEST_RETRY_MAX` | `5` | Max retries when rate limited |
-| `INGEST_RETRY_BASE_SECONDS` | `5` | Base backoff seconds for retries |
-| `CHUNK_SIZE` | `1200` | Text chunk size for ingestion |
-| `CHUNK_OVERLAP` | `200` | Text chunk overlap |
+| Variable | Default | Descripcion |
+|---|---|---|
+| `PINECONE_API_KEY` | requerido | API key de Pinecone |
+| `PINECONE_INDEX` | `horrocruxes-index` | Nombre del indice |
+| `S3_BUCKET` | `horrocruxes-data` | Bucket con PDFs/CSVs |
+| `S3_PDF_PREFIX` | `data/books` | Carpeta S3 de PDFs |
+| `S3_CSV_PREFIX` | `data/structured` | Carpeta S3 de CSVs |
+| `EMBEDDING_PROVIDER` | `sentence-transformers` | Proveedor de embeddings |
+| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Modelo de embeddings |
+| `CHUNK_SIZE` | `1200` | Tamano de fragmento |
+| `CHUNK_OVERLAP` | `200` | Solapamiento entre fragmentos |
 
-When using `EMBEDDING_PROVIDER=gemini`, set `GOOGLE_API_KEY` and optionally
-`GOOGLE_EMBEDDING_MODEL` for the Gemini embedding model.
+## 9. Solucion De Problemas
 
-**Required Secrets:**
+### El frontend no conecta con el backend
 
-| Secret | Description |
-|--------|-------------|
-| `AWS_ROLE_ARN` | GitHub Actions role ARN (from CloudFormation output `GitHubActionsRoleArn`) |
-| `ECR_ACCESS_ROLE_ARN` | AppRunner ECR access role ARN (from CloudFormation output `AppRunnerECRAccessRoleArn`) |
+Verifica `Frontend/.env`:
+
+```env
+VITE_API_URL=http://localhost:8080
+```
+
+Y confirma que el backend este activo:
+
+```bash
+curl http://localhost:8080/health
+```
+
+### Gemini no responde o aparece error de cuota
+
+Puede ocurrir si se agota la cuota del modelo. Cambia a un modelo mas economico:
+
+```env
+GOOGLE_LLM_MODEL=gemini-2.5-flash-lite
+```
+
+El sistema tiene fallback, pero la calidad mejora cuando Gemini esta disponible.
+
+### Pinecone no devuelve resultados
+
+Revisa:
+
+- `PINECONE_API_KEY`
+- `PINECONE_INDEX`
+- Que el indice ya tenga registros cargados
+- Que el modelo de embeddings coincida con el usado durante la ingestion
+
+### Docker no encuentra el frontend
+
+La carpeta correcta es `Frontend` con F mayuscula. El `docker-compose.yaml` ya usa esa ruta.
+
+## 10. Despliegue
+
+La carpeta `infrastructure/` incluye una plantilla CloudFormation para AWS.
+
+El flujo esperado es:
+
+1. Crear infraestructura con CloudFormation.
+2. Construir imagen Docker del backend.
+3. Subir imagen a ECR.
+4. Desplegar en AWS App Runner.
+
+Consulta `infrastructure/setup.yaml` para parametros como repositorio, rama, ECR y rol OIDC.
+
+## 11. Resumen Para Evaluadores
+
+HORROCRUXES combina:
+
+- RAG sobre los 7 libros PDF.
+- Fuente estructurada en CSV.
+- Orquestacion con LangGraph.
+- API FastAPI.
+- Frontend React.
+- Memoria conversacional.
+- Citas auditables.
+- Timeline y reporte Markdown como funciones diferenciales.
+
+La idea central es que el sistema no memoriza respuestas: recupera evidencia real, razona sobre ella y responde con fuentes verificables.
